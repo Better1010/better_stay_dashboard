@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 
-type Method = 'GET' | 'POST' | 'PATCH';
+type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
 type ApiResponse<T = any> = {
   data: T;
@@ -310,6 +310,7 @@ const updateUserStatus = async (id: string, payload: any): Promise<ApiResponse> 
 
   const existing = await supabase.from('profiles').select('*').eq('id', id).single();
   throwIfError(existing.error, 'User not found');
+  if (!existing.data) throw new ApiRequestError(404, 'User not found');
 
   if (current.role === 'hostel_admin' && existing.data.hostel_id !== current.hostelId) {
     throw new ApiRequestError(403, 'Access denied');
@@ -432,6 +433,7 @@ const updateUnit = async (id: string, payload: any): Promise<ApiResponse> => {
   }
   const existing = await supabase.from('units').select('hostel_id').eq('id', id).single();
   throwIfError(existing.error, 'Unit not found');
+  if (!existing.data) throw new ApiRequestError(404, 'Unit not found');
   if (current.role === 'hostel_admin' && existing.data.hostel_id !== current.hostelId) {
     throw new ApiRequestError(403, 'Access denied');
   }
@@ -450,6 +452,7 @@ const deleteUnit = async (id: string): Promise<ApiResponse> => {
   }
   const existing = await supabase.from('units').select('hostel_id').eq('id', id).single();
   throwIfError(existing.error, 'Unit not found');
+  if (!existing.data) throw new ApiRequestError(404, 'Unit not found');
   if (current.role === 'hostel_admin' && existing.data.hostel_id !== current.hostelId) {
     throw new ApiRequestError(403, 'Access denied');
   }
@@ -545,6 +548,7 @@ const getBeds = async (roomId: string): Promise<ApiResponse> => {
   }
   const roomRes = await supabase.from('rooms').select('hostel_id').eq('id', roomId).single();
   throwIfError(roomRes.error, 'Room not found');
+  if (!roomRes.data) throw new ApiRequestError(404, 'Room not found');
   if (current.role === 'hostel_admin' && roomRes.data.hostel_id !== current.hostelId) {
     throw new ApiRequestError(403, 'Access denied');
   }
@@ -604,6 +608,7 @@ const createBed = async (payload: any): Promise<ApiResponse> => {
   }
   const roomRes = await supabase.from('rooms').select('hostel_id').eq('id', roomId).single();
   throwIfError(roomRes.error, 'Room not found');
+  if (!roomRes.data) throw new ApiRequestError(404, 'Room not found');
   if (current.role === 'hostel_admin' && roomRes.data.hostel_id !== current.hostelId) {
     throw new ApiRequestError(403, 'Access denied');
   }
@@ -648,7 +653,10 @@ const updateBed = async (id: string, payload: any): Promise<ApiResponse> => {
   }
   const bedRes = await supabase.from('beds').select('room_id').eq('id', id).single();
   throwIfError(bedRes.error, 'Bed not found');
+  if (!bedRes.data) throw new ApiRequestError(404, 'Bed not found');
   const roomRes = await supabase.from('rooms').select('hostel_id').eq('id', bedRes.data.room_id).single();
+  throwIfError(roomRes.error, 'Room not found');
+  if (!roomRes.data) throw new ApiRequestError(404, 'Room not found');
   if (current.role === 'hostel_admin' && roomRes.data.hostel_id !== current.hostelId) {
     throw new ApiRequestError(403, 'Access denied');
   }
@@ -671,7 +679,10 @@ const assignBed = async (bedId: string, payload: any): Promise<ApiResponse> => {
   }
   const bedRes = await supabase.from('beds').select('room_id, resident_id').eq('id', bedId).single();
   throwIfError(bedRes.error, 'Bed not found');
+  if (!bedRes.data) throw new ApiRequestError(404, 'Bed not found');
   const roomRes = await supabase.from('rooms').select('hostel_id').eq('id', bedRes.data.room_id).single();
+  throwIfError(roomRes.error, 'Room not found');
+  if (!roomRes.data) throw new ApiRequestError(404, 'Room not found');
   if (current.role === 'hostel_admin' && roomRes.data.hostel_id !== current.hostelId) {
     throw new ApiRequestError(403, 'Access denied');
   }
@@ -709,7 +720,10 @@ const unassignBed = async (bedId: string): Promise<ApiResponse> => {
   }
   const bedRes = await supabase.from('beds').select('room_id, resident_id').eq('id', bedId).single();
   throwIfError(bedRes.error, 'Bed not found');
+  if (!bedRes.data) throw new ApiRequestError(404, 'Bed not found');
   const roomRes = await supabase.from('rooms').select('hostel_id').eq('id', bedRes.data.room_id).single();
+  throwIfError(roomRes.error, 'Room not found');
+  if (!roomRes.data) throw new ApiRequestError(404, 'Room not found');
   if (current.role === 'hostel_admin' && roomRes.data.hostel_id !== current.hostelId) {
     throw new ApiRequestError(403, 'Access denied');
   }
@@ -737,8 +751,13 @@ const updateBedAssignmentPrice = async (assignmentId: string, payload: any): Pro
   }
   const assignRes = await supabase.from('bed_assignments').select('bed_id').eq('id', assignmentId).is('ended_at', null).single();
   throwIfError(assignRes.error, 'Assignment not found');
+  if (!assignRes.data) throw new ApiRequestError(404, 'Assignment not found');
   const bedRes = await supabase.from('beds').select('room_id').eq('id', assignRes.data.bed_id).single();
+  throwIfError(bedRes.error, 'Bed not found');
+  if (!bedRes.data) throw new ApiRequestError(404, 'Bed not found');
   const roomRes = await supabase.from('rooms').select('hostel_id').eq('id', bedRes.data.room_id).single();
+  throwIfError(roomRes.error, 'Room not found');
+  if (!roomRes.data) throw new ApiRequestError(404, 'Room not found');
   if (current.role === 'hostel_admin' && roomRes.data.hostel_id !== current.hostelId) {
     throw new ApiRequestError(403, 'Access denied');
   }
@@ -903,6 +922,7 @@ const updateComplaintStatus = async (id: string, payload: any): Promise<ApiRespo
 
   const existing = await supabase.from('complaints').select('*').eq('id', id).single();
   throwIfError(existing.error, 'Complaint not found');
+  if (!existing.data) throw new ApiRequestError(404, 'Complaint not found');
 
   if (current.role === 'hostel_admin' && existing.data.hostel_id !== current.hostelId) {
     throw new ApiRequestError(403, 'Access denied');
@@ -1045,6 +1065,7 @@ const updateTaskStatus = async (id: string, payload: any): Promise<ApiResponse> 
 
   const existing = await supabase.from('tasks').select('*').eq('id', id).single();
   throwIfError(existing.error, 'Task not found');
+  if (!existing.data) throw new ApiRequestError(404, 'Task not found');
 
   if (current.role === 'staff' && existing.data.assigned_to !== current.id) {
     throw new ApiRequestError(403, 'Access denied');
