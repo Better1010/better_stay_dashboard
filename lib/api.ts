@@ -15,13 +15,6 @@ class ApiRequestError extends Error {
   }
 }
 
-const redirectPathByRole: Record<string, string> = {
-  super_admin: '/super-admin',
-  hostel_admin: '/admin',
-  resident: '/resident',
-  staff: '/staff',
-};
-
 const nowIso = () => new Date().toISOString();
 
 const throwIfError = (error: any, fallbackMessage: string) => {
@@ -49,56 +42,6 @@ const requireAuthUser = () => {
   return user;
 };
 
-const mapProfile = (p: any) => ({
-  _id: p.id,
-  id: p.id,
-  name: p.name,
-  email: p.email,
-  phone: p.phone,
-  role: p.role,
-  status: p.status,
-  hostelId: p.hostel_id,
-  roomId: p.room_id,
-  bedId: p.bed_id,
-  staffType: p.staff_type,
-  mustChangePassword: p.must_change_password || false,
-  identificationDocument: p.identification_document || null,
-  createdAt: p.created_at,
-  updatedAt: p.updated_at,
-});
-
-const enrichProfiles = async (profiles: any[]) => {
-  const roomIds = profiles.map((p) => p.room_id).filter(Boolean);
-  const hostelIds = profiles.map((p) => p.hostel_id).filter(Boolean);
-  const bedIds = profiles.map((p) => p.bed_id).filter(Boolean);
-
-  const [roomsRes, hostelsRes, bedsRes] = await Promise.all([
-    roomIds.length
-      ? supabase.from('rooms').select('id, room_number').in('id', roomIds)
-      : Promise.resolve({ data: [], error: null }),
-    hostelIds.length
-      ? supabase.from('hostels').select('id, name').in('id', hostelIds)
-      : Promise.resolve({ data: [], error: null }),
-    bedIds.length
-      ? supabase.from('beds').select('id, bed_number').in('id', bedIds)
-      : Promise.resolve({ data: [], error: null }),
-  ]);
-
-  throwIfError(roomsRes.error, 'Failed to load rooms');
-  throwIfError(hostelsRes.error, 'Failed to load hostels');
-  throwIfError(bedsRes.error, 'Failed to load beds');
-
-  const rooms = new Map((roomsRes.data || []).map((r: any) => [r.id, r]));
-  const hostels = new Map((hostelsRes.data || []).map((h: any) => [h.id, h]));
-  const beds = new Map((bedsRes.data || []).map((b: any) => [b.id, b]));
-
-  return profiles.map((p) => ({
-    ...mapProfile(p),
-    roomId: p.room_id ? { _id: p.room_id, roomNumber: rooms.get(p.room_id)?.room_number } : null,
-    hostelId: p.hostel_id ? { _id: p.hostel_id, name: hostels.get(p.hostel_id)?.name } : null,
-    bedId: p.bed_id ? { _id: p.bed_id, bedNumber: beds.get(p.bed_id)?.bed_number } : null,
-  }));
-};
 
 const getPathParam = (path: string, regex: RegExp) => {
   const basePath = path.split('?')[0];
@@ -118,62 +61,28 @@ const getQueryParam = (path: string, key: string): string | null => {
 };
 
 const authLogin = async (payload: any): Promise<ApiResponse> => {
-  const { email, phone, password } = payload || {};
-  if (!password || (!email && !phone)) {
-    throw new ApiRequestError(400, 'Email/Phone and password are required');
-  }
-
-  let resolvedEmail = email?.trim()?.toLowerCase();
-  if (!resolvedEmail && phone) {
-    const profileByPhone = await supabase
-      .from('profiles')
-      .select('email')
-      .eq('phone', phone.trim())
-      .maybeSingle();
-    throwIfError(profileByPhone.error, 'Invalid credentials');
-    resolvedEmail = profileByPhone.data?.email || null;
-  }
-
-  if (!resolvedEmail) {
-    throw new ApiRequestError(401, 'Invalid credentials');
+  const { email, password } = payload || {};
+  if (!email || !password) {
+    throw new ApiRequestError(400, 'Email and password are required');
   }
 
   const signIn = await supabase.auth.signInWithPassword({
-    email: resolvedEmail,
+    email: email.trim().toLowerCase(),
     password,
   });
   if (signIn.error || !signIn.data.user || !signIn.data.session) {
     throw new ApiRequestError(401, signIn.error?.message || 'Invalid credentials');
   }
 
-  const profileRes = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('auth_user_id', signIn.data.user.id)
-    .maybeSingle();
-  throwIfError(profileRes.error, 'Failed to load profile');
-
-  const profile = profileRes.data;
-  if (!profile) {
-    await supabase.auth.signOut();
-    throw new ApiRequestError(
-      403,
-      'No profile found for this account. Please sign up first, or contact support if you already signed up.'
-    );
-  }
-  if (profile.status !== 'active') {
-    await supabase.auth.signOut();
-    throw new ApiRequestError(403, `Account is ${profile.status}. Please contact administrator.`);
-  }
-
+  const u = signIn.data.user;
   const user = {
-    id: profile.id,
-    name: profile.name,
-    email: profile.email,
-    phone: profile.phone,
-    role: profile.role,
-    hostelId: profile.hostel_id,
-    mustChangePassword: profile.must_change_password || false,
+    id: u.id,
+    name: u.email ?? 'Admin',
+    email: u.email ?? '',
+    phone: '',
+    role: 'super_admin' as const,
+    hostelId: undefined as string | undefined,
+    mustChangePassword: false,
   };
 
   return {
@@ -181,161 +90,33 @@ const authLogin = async (payload: any): Promise<ApiResponse> => {
       message: 'Login successful',
       token: signIn.data.session.access_token,
       user,
-      redirectPath: redirectPathByRole[profile.role] || '/',
+      redirectPath: '/super-admin',
     },
   };
 };
 
-const authSignup = async (payload: any): Promise<ApiResponse> => {
-  const { name, email, phone, password, hostelId } = payload || {};
-  if (!name || !email || !phone || !password) {
-    throw new ApiRequestError(400, 'All fields are required');
-  }
-  if (password.length < 6) {
-    throw new ApiRequestError(400, 'Password must be at least 6 characters');
-  }
-
-  const existing = await supabase
-    .from('profiles')
-    .select('id')
-    .or(`email.eq.${email.toLowerCase()},phone.eq.${phone}`)
-    .limit(1);
-  throwIfError(existing.error, 'Failed to check existing user');
-  if ((existing.data || []).length > 0) {
-    throw new ApiRequestError(400, 'User with this email or phone already exists');
-  }
-
-  const signUp = await supabase.auth.signUp({
-    email: email.toLowerCase(),
-    password,
-    options: {
-      data: { name, phone },
-    },
-  });
-  if (signUp.error || !signUp.data.user) {
-    throw new ApiRequestError(400, signUp.error?.message || 'Signup failed');
-  }
-
-  const insertProfile = await supabase.from('profiles').insert({
-    auth_user_id: signUp.data.user.id,
-    name,
-    email: email.toLowerCase(),
-    phone,
-    role: 'resident',
-    status: 'pending',
-    hostel_id: hostelId || null,
-    room_id: null,
-    bed_id: null,
-    identification_document: null,
-    must_change_password: false,
-    created_at: nowIso(),
-    updated_at: nowIso(),
-  });
-  if (insertProfile.error) {
-    if (insertProfile.error.code === '23505') {
-      return {
-        data: {
-          message: 'Account created successfully. Please wait for admin approval.',
-          userId: signUp.data.user.id,
-        },
-      };
-    }
-    throw new ApiRequestError(400, insertProfile.error.message || 'Failed to create profile');
-  }
-
-  await supabase.auth.signOut();
-
-  return {
-    data: {
-      message: 'Account created successfully. Please wait for admin approval.',
-      userId: signUp.data.user.id,
-    },
-  };
+const authSignup = async (_payload: any): Promise<ApiResponse> => {
+  throw new ApiRequestError(400, 'Sign up is disabled. Create users in Supabase Dashboard → Authentication → Users.');
 };
 
 const getUsers = async (): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  let query = supabase.from('profiles').select('*');
-
-  if (current.role === 'super_admin') {
-    // no filter
-  } else if (current.role === 'hostel_admin') {
-    query = query.eq('hostel_id', current.hostelId);
-  } else if (current.role === 'staff') {
-    query = query.eq('hostel_id', current.hostelId).eq('role', 'resident');
-  } else {
-    throw new ApiRequestError(403, 'Access denied');
-  }
-
-  const res = await query.order('created_at', { ascending: false });
-  throwIfError(res.error, 'Failed to load users');
-
-  const users = await enrichProfiles(res.data || []);
-  return { data: { users } };
+  requireAuthUser();
+  return { data: { users: [] } };
 };
 
 const getPendingUsers = async (): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  if (!['super_admin', 'hostel_admin'].includes(current.role)) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
-
-  let query = supabase
-    .from('profiles')
-    .select('*')
-    .eq('status', 'pending')
-    .eq('role', 'resident');
-
-  if (current.role === 'hostel_admin') {
-    query = query.eq('hostel_id', current.hostelId);
-  }
-
-  const res = await query.order('created_at', { ascending: false });
-  throwIfError(res.error, 'Failed to load pending users');
-
-  const users = await enrichProfiles(res.data || []);
-  return { data: { users } };
+  requireAuthUser();
+  return { data: { users: [] } };
 };
 
-const updateUserStatus = async (id: string, payload: any): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  if (!['super_admin', 'hostel_admin'].includes(current.role)) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
-
-  const status = payload?.status;
-  if (!['pending', 'active', 'blocked'].includes(status)) {
-    throw new ApiRequestError(400, 'Invalid status');
-  }
-
-  const existing = await supabase.from('profiles').select('*').eq('id', id).single();
-  throwIfError(existing.error, 'User not found');
-  if (!existing.data) throw new ApiRequestError(404, 'User not found');
-
-  if (current.role === 'hostel_admin' && existing.data.hostel_id !== current.hostelId) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
-
-  const updated = await supabase
-    .from('profiles')
-    .update({ status, updated_at: nowIso() })
-    .eq('id', id)
-    .select('*')
-    .single();
-  throwIfError(updated.error, 'Failed to update user status');
-
-  return { data: { message: `User status updated to ${status}`, user: mapProfile(updated.data) } };
+const updateUserStatus = async (_id: string, _payload: any): Promise<ApiResponse> => {
+  requireAuthUser();
+  throw new ApiRequestError(400, 'User management is disabled. Manage users in Supabase Dashboard.');
 };
 
 const getHostels = async (): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  let query = supabase.from('hostels').select('*');
-
-  if (['hostel_admin', 'resident', 'staff'].includes(current.role)) {
-    query = query.eq('id', current.hostelId);
-  }
-
-  const res = await query.order('created_at', { ascending: false });
+  requireAuthUser();
+  const res = await supabase.from('hostels').select('*').order('created_at', { ascending: false });
   throwIfError(res.error, 'Failed to load hostels');
 
   const hostels = (res.data || []).map((h: any) => ({
@@ -347,10 +128,7 @@ const getHostels = async (): Promise<ApiResponse> => {
 };
 
 const createHostel = async (payload: any): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  if (current.role !== 'super_admin') {
-    throw new ApiRequestError(403, 'Access denied');
-  }
+  requireAuthUser();
   const { name, address, city, phone, email } = payload || {};
   if (!name || !address || !city || !phone || !email) {
     throw new ApiRequestError(400, 'name, address, city, phone and email are required');
@@ -373,13 +151,7 @@ const createHostel = async (payload: any): Promise<ApiResponse> => {
 };
 
 const getUnits = async (hostelId: string): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  if (!['super_admin', 'hostel_admin'].includes(current.role)) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
-  if (current.role === 'hostel_admin' && current.hostelId !== hostelId) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
+  requireAuthUser();
   const res = await supabase
     .from('units')
     .select('*')
@@ -400,16 +172,10 @@ const getUnits = async (hostelId: string): Promise<ApiResponse> => {
 };
 
 const createUnit = async (payload: any): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  if (!['super_admin', 'hostel_admin'].includes(current.role)) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
+  requireAuthUser();
   const { hostelId, unitNumber, floor } = payload || {};
   if (!hostelId || !unitNumber || floor == null) {
     throw new ApiRequestError(400, 'hostelId, unitNumber and floor are required');
-  }
-  if (current.role === 'hostel_admin' && current.hostelId !== hostelId) {
-    throw new ApiRequestError(403, 'Access denied');
   }
   const res = await supabase
     .from('units')
@@ -427,16 +193,10 @@ const createUnit = async (payload: any): Promise<ApiResponse> => {
 };
 
 const updateUnit = async (id: string, payload: any): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  if (!['super_admin', 'hostel_admin'].includes(current.role)) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
+  requireAuthUser();
   const existing = await supabase.from('units').select('hostel_id').eq('id', id).single();
   throwIfError(existing.error, 'Unit not found');
   if (!existing.data) throw new ApiRequestError(404, 'Unit not found');
-  if (current.role === 'hostel_admin' && existing.data.hostel_id !== current.hostelId) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
   const updates: any = { updated_at: nowIso() };
   if (payload?.unitNumber != null) updates.unit_number = String(payload.unitNumber).trim();
   if (payload?.floor != null) updates.floor = Number(payload.floor);
@@ -446,31 +206,19 @@ const updateUnit = async (id: string, payload: any): Promise<ApiResponse> => {
 };
 
 const deleteUnit = async (id: string): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  if (!['super_admin', 'hostel_admin'].includes(current.role)) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
+  requireAuthUser();
   const existing = await supabase.from('units').select('hostel_id').eq('id', id).single();
   throwIfError(existing.error, 'Unit not found');
   if (!existing.data) throw new ApiRequestError(404, 'Unit not found');
-  if (current.role === 'hostel_admin' && existing.data.hostel_id !== current.hostelId) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
   const res = await supabase.from('units').delete().eq('id', id);
   throwIfError(res.error, 'Failed to delete unit');
   return { data: { message: 'Unit deleted' } };
 };
 
 const getRooms = async (queryParams?: { unitId?: string; hostelId?: string }): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  if (!['super_admin', 'hostel_admin'].includes(current.role)) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
-
+  requireAuthUser();
   let query = supabase.from('rooms').select('*');
-  if (current.role === 'hostel_admin') {
-    query = query.eq('hostel_id', current.hostelId);
-  } else if (queryParams?.hostelId) {
+  if (queryParams?.hostelId) {
     query = query.eq('hostel_id', queryParams.hostelId);
   }
   if (queryParams?.unitId) {
@@ -499,16 +247,10 @@ const getRooms = async (queryParams?: { unitId?: string; hostelId?: string }): P
 };
 
 const createRoom = async (payload: any): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  if (!['super_admin', 'hostel_admin'].includes(current.role)) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
+  requireAuthUser();
   const { unitId, hostelId, roomNumber, floor, totalBeds, rent } = payload || {};
   if (!hostelId || !roomNumber || floor == null) {
     throw new ApiRequestError(400, 'hostelId, roomNumber and floor are required');
-  }
-  if (current.role === 'hostel_admin' && current.hostelId !== hostelId) {
-    throw new ApiRequestError(403, 'Access denied');
   }
   const res = await supabase
     .from('rooms')
@@ -542,16 +284,10 @@ const createRoom = async (payload: any): Promise<ApiResponse> => {
 };
 
 const getBeds = async (roomId: string): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  if (!['super_admin', 'hostel_admin'].includes(current.role)) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
+  requireAuthUser();
   const roomRes = await supabase.from('rooms').select('hostel_id').eq('id', roomId).single();
   throwIfError(roomRes.error, 'Room not found');
   if (!roomRes.data) throw new ApiRequestError(404, 'Room not found');
-  if (current.role === 'hostel_admin' && roomRes.data.hostel_id !== current.hostelId) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
   const res = await supabase
     .from('beds')
     .select('*')
@@ -568,16 +304,9 @@ const getBeds = async (roomId: string): Promise<ApiResponse> => {
           .is('ended_at', null)
       : { data: [] as any[] };
   const assignments = new Map((assignmentsRes.data || []).map((a: any) => [a.bed_id, a]));
-  const residentIds = [...new Set((assignmentsRes.data || []).map((a: any) => a.resident_id).filter(Boolean))];
-  const residentsRes =
-    residentIds.length > 0
-      ? await supabase.from('profiles').select('id, name, email, phone').in('id', residentIds)
-      : { data: [] as any[] };
-  const residents = new Map((residentsRes.data || []).map((r: any) => [r.id, r]));
   const beds = (res.data || []).map((b: any) => {
     const assignment = assignments.get(b.id);
-    const resident = assignment?.resident_id ? residents.get(assignment.resident_id) : null;
-    const assigneeName = assignment?.assignee_name ?? resident?.name ?? null;
+    const assigneeName = assignment?.assignee_name ?? null;
     return {
       _id: b.id,
       id: b.id,
@@ -586,8 +315,8 @@ const getBeds = async (roomId: string): Promise<ApiResponse> => {
       basePrice: b.base_price ?? 0,
       residentId: b.resident_id,
       assignmentPrice: assignment?.price ?? null,
-      assigneeName: assigneeName || (resident ? resident.name : null),
-      resident: resident ? { _id: resident.id, name: resident.name, email: resident.email, phone: resident.phone } : (assigneeName ? { _id: null, name: assigneeName, email: '', phone: '' } : null),
+      assigneeName: assigneeName || null,
+      resident: b.resident_id ? { _id: b.resident_id, name: assigneeName ?? '', email: '', phone: '' } : (assigneeName ? { _id: null, name: assigneeName, email: '', phone: '' } : null),
       isOccupied: b.is_occupied,
       isActive: b.is_active,
       createdAt: b.created_at,
@@ -598,10 +327,7 @@ const getBeds = async (roomId: string): Promise<ApiResponse> => {
 };
 
 const createBed = async (payload: any): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  if (!['super_admin', 'hostel_admin'].includes(current.role)) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
+  requireAuthUser();
   const { roomId, bedNumber, basePrice } = payload || {};
   if (!roomId || !bedNumber) {
     throw new ApiRequestError(400, 'roomId and bedNumber are required');
@@ -609,9 +335,6 @@ const createBed = async (payload: any): Promise<ApiResponse> => {
   const roomRes = await supabase.from('rooms').select('hostel_id').eq('id', roomId).single();
   throwIfError(roomRes.error, 'Room not found');
   if (!roomRes.data) throw new ApiRequestError(404, 'Room not found');
-  if (current.role === 'hostel_admin' && roomRes.data.hostel_id !== current.hostelId) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
   const trimmedBedNumber = String(bedNumber).trim();
   if (!trimmedBedNumber) {
     throw new ApiRequestError(400, 'Bed number is required');
@@ -647,19 +370,13 @@ const createBed = async (payload: any): Promise<ApiResponse> => {
 };
 
 const updateBed = async (id: string, payload: any): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  if (!['super_admin', 'hostel_admin'].includes(current.role)) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
+  requireAuthUser();
   const bedRes = await supabase.from('beds').select('room_id').eq('id', id).single();
   throwIfError(bedRes.error, 'Bed not found');
   if (!bedRes.data) throw new ApiRequestError(404, 'Bed not found');
   const roomRes = await supabase.from('rooms').select('hostel_id').eq('id', bedRes.data.room_id).single();
   throwIfError(roomRes.error, 'Room not found');
   if (!roomRes.data) throw new ApiRequestError(404, 'Room not found');
-  if (current.role === 'hostel_admin' && roomRes.data.hostel_id !== current.hostelId) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
   const updates: any = { updated_at: nowIso() };
   if (payload?.basePrice != null) updates.base_price = Number(payload.basePrice);
   const res = await supabase.from('beds').update(updates).eq('id', id).select('*').single();
@@ -669,9 +386,6 @@ const updateBed = async (id: string, payload: any): Promise<ApiResponse> => {
 
 const assignBed = async (bedId: string, payload: any): Promise<ApiResponse> => {
   const current = requireAuthUser();
-  if (!['super_admin', 'hostel_admin'].includes(current.role)) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
   const { assigneeName, price } = payload || {};
   const name = typeof assigneeName === 'string' ? assigneeName.trim() : '';
   if (!name || price == null) {
@@ -683,9 +397,6 @@ const assignBed = async (bedId: string, payload: any): Promise<ApiResponse> => {
   const roomRes = await supabase.from('rooms').select('hostel_id').eq('id', bedRes.data.room_id).single();
   throwIfError(roomRes.error, 'Room not found');
   if (!roomRes.data) throw new ApiRequestError(404, 'Room not found');
-  if (current.role === 'hostel_admin' && roomRes.data.hostel_id !== current.hostelId) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
   await supabase
     .from('bed_assignments')
     .update({ ended_at: nowIso(), updated_at: nowIso() })
@@ -724,9 +435,6 @@ const unassignBed = async (bedId: string): Promise<ApiResponse> => {
   const roomRes = await supabase.from('rooms').select('hostel_id').eq('id', bedRes.data.room_id).single();
   throwIfError(roomRes.error, 'Room not found');
   if (!roomRes.data) throw new ApiRequestError(404, 'Room not found');
-  if (current.role === 'hostel_admin' && roomRes.data.hostel_id !== current.hostelId) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
   const residentId = bedRes.data.resident_id;
   await supabase
     .from('bed_assignments')
@@ -734,17 +442,11 @@ const unassignBed = async (bedId: string): Promise<ApiResponse> => {
     .eq('bed_id', bedId)
     .is('ended_at', null);
   await supabase.from('beds').update({ resident_id: null, is_occupied: false, updated_at: nowIso() }).eq('id', bedId);
-  if (residentId) {
-    await supabase.from('profiles').update({ room_id: null, bed_id: null, updated_at: nowIso() }).eq('id', residentId);
-  }
   return { data: { message: 'Bed unassigned' } };
 };
 
 const updateBedAssignmentPrice = async (assignmentId: string, payload: any): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  if (!['super_admin', 'hostel_admin'].includes(current.role)) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
+  requireAuthUser();
   const price = payload?.price;
   if (price == null) {
     throw new ApiRequestError(400, 'price is required');
@@ -758,9 +460,6 @@ const updateBedAssignmentPrice = async (assignmentId: string, payload: any): Pro
   const roomRes = await supabase.from('rooms').select('hostel_id').eq('id', bedRes.data.room_id).single();
   throwIfError(roomRes.error, 'Room not found');
   if (!roomRes.data) throw new ApiRequestError(404, 'Room not found');
-  if (current.role === 'hostel_admin' && roomRes.data.hostel_id !== current.hostelId) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
   const res = await supabase
     .from('bed_assignments')
     .update({ price: Number(price), updated_at: nowIso() })
@@ -773,14 +472,9 @@ const updateBedAssignmentPrice = async (assignmentId: string, payload: any): Pro
 
 const getMyRoom = async (): Promise<ApiResponse> => {
   const current = requireAuthUser();
-  if (current.role !== 'resident') {
-    throw new ApiRequestError(403, 'Access denied');
-  }
-
-  const profileRes = await supabase.from('profiles').select('room_id').eq('id', current.id).single();
-  throwIfError(profileRes.error, 'Failed to load resident profile');
-
-  const roomId = profileRes.data?.room_id;
+  const bedRes = await supabase.from('beds').select('room_id').eq('resident_id', current.id).limit(1);
+  throwIfError(bedRes.error, 'Failed to load bed');
+  const roomId = bedRes.data?.[0]?.room_id;
   if (!roomId) {
     return { data: { room: null, message: 'No room assigned' } };
   }
@@ -825,51 +519,23 @@ const getMyRoom = async (): Promise<ApiResponse> => {
 };
 
 const getComplaints = async (): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  let query = supabase.from('complaints').select('*');
-
-  if (current.role === 'resident') {
-    query = query.eq('resident_id', current.id);
-  } else if (current.role === 'hostel_admin') {
-    query = query.eq('hostel_id', current.hostelId);
-  } else if (current.role !== 'super_admin') {
-    throw new ApiRequestError(403, 'Access denied');
-  }
-
-  const res = await query.order('created_at', { ascending: false });
+  requireAuthUser();
+  const res = await supabase.from('complaints').select('*').order('created_at', { ascending: false });
   throwIfError(res.error, 'Failed to load complaints');
 
   const complaints = res.data || [];
-  const residentIds = complaints.map((c: any) => c.resident_id).filter(Boolean);
   const hostelIds = complaints.map((c: any) => c.hostel_id).filter(Boolean);
-
-  const [residentsRes, hostelsRes] = await Promise.all([
-    residentIds.length
-      ? supabase.from('profiles').select('id, name, email, phone').in('id', residentIds)
-      : Promise.resolve({ data: [], error: null }),
-    hostelIds.length
-      ? supabase.from('hostels').select('id, name').in('id', hostelIds)
-      : Promise.resolve({ data: [], error: null }),
-  ]);
-
-  throwIfError(residentsRes.error, 'Failed to load complaint residents');
+  const hostelsRes = hostelIds.length
+    ? await supabase.from('hostels').select('id, name').in('id', hostelIds)
+    : { data: [], error: null };
   throwIfError(hostelsRes.error, 'Failed to load complaint hostels');
-
-  const residentMap = new Map((residentsRes.data || []).map((r: any) => [r.id, r]));
   const hostelMap = new Map((hostelsRes.data || []).map((h: any) => [h.id, h]));
 
   return {
     data: {
       complaints: complaints.map((c: any) => ({
         _id: c.id,
-        residentId: c.resident_id
-          ? {
-              _id: c.resident_id,
-              name: residentMap.get(c.resident_id)?.name,
-              email: residentMap.get(c.resident_id)?.email,
-              phone: residentMap.get(c.resident_id)?.phone,
-            }
-          : null,
+        residentId: c.resident_id ? { _id: c.resident_id, name: '', email: '', phone: '' } : null,
         hostelId: c.hostel_id ? { _id: c.hostel_id, name: hostelMap.get(c.hostel_id)?.name } : null,
         title: c.title,
         description: c.description,
@@ -885,18 +551,18 @@ const getComplaints = async (): Promise<ApiResponse> => {
 
 const createComplaint = async (payload: any): Promise<ApiResponse> => {
   const current = requireAuthUser();
-  if (current.role !== 'resident') {
-    throw new ApiRequestError(403, 'Only residents can submit complaints');
-  }
   if (!payload?.title || !payload?.description) {
     throw new ApiRequestError(400, 'Title and description are required');
+  }
+  if (!payload?.hostelId) {
+    throw new ApiRequestError(400, 'hostelId is required');
   }
 
   const res = await supabase
     .from('complaints')
     .insert({
       resident_id: current.id,
-      hostel_id: current.hostelId,
+      hostel_id: payload.hostelId,
       title: payload.title,
       description: payload.description,
       category: payload.category || 'general',
@@ -912,10 +578,7 @@ const createComplaint = async (payload: any): Promise<ApiResponse> => {
 };
 
 const updateComplaintStatus = async (id: string, payload: any): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  if (!['super_admin', 'hostel_admin'].includes(current.role)) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
+  requireAuthUser();
   if (!['pending', 'in_progress', 'resolved', 'rejected'].includes(payload?.status)) {
     throw new ApiRequestError(400, 'Invalid status');
   }
@@ -923,10 +586,6 @@ const updateComplaintStatus = async (id: string, payload: any): Promise<ApiRespo
   const existing = await supabase.from('complaints').select('*').eq('id', id).single();
   throwIfError(existing.error, 'Complaint not found');
   if (!existing.data) throw new ApiRequestError(404, 'Complaint not found');
-
-  if (current.role === 'hostel_admin' && existing.data.hostel_id !== current.hostelId) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
 
   const res = await supabase
     .from('complaints')
@@ -940,50 +599,23 @@ const updateComplaintStatus = async (id: string, payload: any): Promise<ApiRespo
 };
 
 const getPayments = async (): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  let query = supabase.from('payments').select('*');
-
-  if (current.role === 'resident') {
-    query = query.eq('resident_id', current.id);
-  } else if (current.role === 'hostel_admin') {
-    query = query.eq('hostel_id', current.hostelId);
-  } else if (current.role !== 'super_admin') {
-    throw new ApiRequestError(403, 'Access denied');
-  }
-
-  const res = await query.order('created_at', { ascending: false });
+  requireAuthUser();
+  const res = await supabase.from('payments').select('*').order('created_at', { ascending: false });
   throwIfError(res.error, 'Failed to load payments');
 
   const payments = res.data || [];
-  const residentIds = payments.map((p: any) => p.resident_id).filter(Boolean);
   const hostelIds = payments.map((p: any) => p.hostel_id).filter(Boolean);
-
-  const [residentsRes, hostelsRes] = await Promise.all([
-    residentIds.length
-      ? supabase.from('profiles').select('id, name, email, phone').in('id', residentIds)
-      : Promise.resolve({ data: [], error: null }),
-    hostelIds.length
-      ? supabase.from('hostels').select('id, name').in('id', hostelIds)
-      : Promise.resolve({ data: [], error: null }),
-  ]);
-  throwIfError(residentsRes.error, 'Failed to load payment residents');
+  const hostelsRes = hostelIds.length
+    ? await supabase.from('hostels').select('id, name').in('id', hostelIds)
+    : { data: [], error: null };
   throwIfError(hostelsRes.error, 'Failed to load payment hostels');
-
-  const residentMap = new Map((residentsRes.data || []).map((r: any) => [r.id, r]));
   const hostelMap = new Map((hostelsRes.data || []).map((h: any) => [h.id, h]));
 
   return {
     data: {
       payments: payments.map((p: any) => ({
         _id: p.id,
-        residentId: p.resident_id
-          ? {
-              _id: p.resident_id,
-              name: residentMap.get(p.resident_id)?.name,
-              email: residentMap.get(p.resident_id)?.email,
-              phone: residentMap.get(p.resident_id)?.phone,
-            }
-          : null,
+        residentId: p.resident_id ? { _id: p.resident_id, name: '', email: '', phone: '' } : null,
         hostelId: p.hostel_id ? { _id: p.hostel_id, name: hostelMap.get(p.hostel_id)?.name } : null,
         amount: p.amount,
         method: p.method,
@@ -998,37 +630,16 @@ const getPayments = async (): Promise<ApiResponse> => {
 };
 
 const getTasks = async (): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  let query = supabase.from('tasks').select('*');
-
-  if (current.role === 'staff') {
-    query = query.eq('assigned_to', current.id);
-  } else if (current.role === 'hostel_admin') {
-    query = query.eq('hostel_id', current.hostelId);
-  } else if (current.role !== 'super_admin') {
-    throw new ApiRequestError(403, 'Access denied');
-  }
-
-  const res = await query.order('created_at', { ascending: false });
+  requireAuthUser();
+  const res = await supabase.from('tasks').select('*').order('created_at', { ascending: false });
   throwIfError(res.error, 'Failed to load tasks');
 
   const tasks = res.data || [];
-  const assignedIds = tasks.map((t: any) => t.assigned_to).filter(Boolean);
   const hostelIds = tasks.map((t: any) => t.hostel_id).filter(Boolean);
-
-  const [staffRes, hostelsRes] = await Promise.all([
-    assignedIds.length
-      ? supabase.from('profiles').select('id, name, email, phone').in('id', assignedIds)
-      : Promise.resolve({ data: [], error: null }),
-    hostelIds.length
-      ? supabase.from('hostels').select('id, name').in('id', hostelIds)
-      : Promise.resolve({ data: [], error: null }),
-  ]);
-
-  throwIfError(staffRes.error, 'Failed to load task assignees');
+  const hostelsRes = hostelIds.length
+    ? await supabase.from('hostels').select('id, name').in('id', hostelIds)
+    : { data: [], error: null };
   throwIfError(hostelsRes.error, 'Failed to load task hostels');
-
-  const staffMap = new Map((staffRes.data || []).map((u: any) => [u.id, u]));
   const hostelMap = new Map((hostelsRes.data || []).map((h: any) => [h.id, h]));
 
   return {
@@ -1037,14 +648,7 @@ const getTasks = async (): Promise<ApiResponse> => {
         _id: t.id,
         title: t.title,
         description: t.description,
-        assignedTo: t.assigned_to
-          ? {
-              _id: t.assigned_to,
-              name: staffMap.get(t.assigned_to)?.name,
-              email: staffMap.get(t.assigned_to)?.email,
-              phone: staffMap.get(t.assigned_to)?.phone,
-            }
-          : null,
+        assignedTo: t.assigned_to ? { _id: t.assigned_to, name: '', email: '', phone: '' } : null,
         hostelId: t.hostel_id ? { _id: t.hostel_id, name: hostelMap.get(t.hostel_id)?.name } : null,
         priority: t.priority,
         type: t.type,
@@ -1058,7 +662,7 @@ const getTasks = async (): Promise<ApiResponse> => {
 };
 
 const updateTaskStatus = async (id: string, payload: any): Promise<ApiResponse> => {
-  const current = requireAuthUser();
+  requireAuthUser();
   if (!['pending', 'in_progress', 'completed', 'cancelled'].includes(payload?.status)) {
     throw new ApiRequestError(400, 'Invalid status');
   }
@@ -1066,16 +670,6 @@ const updateTaskStatus = async (id: string, payload: any): Promise<ApiResponse> 
   const existing = await supabase.from('tasks').select('*').eq('id', id).single();
   throwIfError(existing.error, 'Task not found');
   if (!existing.data) throw new ApiRequestError(404, 'Task not found');
-
-  if (current.role === 'staff' && existing.data.assigned_to !== current.id) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
-  if (current.role === 'hostel_admin' && existing.data.hostel_id !== current.hostelId) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
-  if (!['staff', 'hostel_admin', 'super_admin'].includes(current.role)) {
-    throw new ApiRequestError(403, 'Access denied');
-  }
 
   const res = await supabase
     .from('tasks')
@@ -1089,13 +683,8 @@ const updateTaskStatus = async (id: string, payload: any): Promise<ApiResponse> 
 };
 
 const getNotices = async (): Promise<ApiResponse> => {
-  const current = requireAuthUser();
-  let query = supabase.from('notices').select('*');
-  if (['resident', 'staff', 'hostel_admin'].includes(current.role)) {
-    query = query.eq('hostel_id', current.hostelId);
-  }
-
-  const res = await query.order('created_at', { ascending: false });
+  requireAuthUser();
+  const res = await supabase.from('notices').select('*').order('created_at', { ascending: false });
   throwIfError(res.error, 'Failed to load notices');
 
   return {
