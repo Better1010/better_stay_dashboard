@@ -80,6 +80,7 @@ create table if not exists public.beds (
   room_id uuid not null references public.rooms(id) on delete cascade,
   bed_number text not null,
   base_price numeric(12,2) not null default 0,
+  picture_url text null,
   resident_id uuid null references auth.users(id) on delete set null,
   is_occupied boolean not null default false,
   is_active boolean not null default true,
@@ -153,6 +154,26 @@ create table if not exists public.notices (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.expense_categories (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.expenses (
+  id uuid primary key default gen_random_uuid(),
+  unit_id uuid not null references public.units(id) on delete cascade,
+  expense_name text not null,
+  category_id uuid not null references public.expense_categories(id) on delete restrict,
+  amount numeric(12,2) not null,
+  expense_date date not null,
+  notes text null,
+  created_at timestamptz not null default now()
+);
+create index if not exists expenses_unit_id_idx on public.expenses(unit_id);
+create index if not exists expenses_category_id_idx on public.expenses(category_id);
+create index if not exists expenses_expense_date_idx on public.expenses(expense_date);
+
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -188,6 +209,8 @@ alter table public.complaints enable row level security;
 alter table public.payments enable row level security;
 alter table public.tasks enable row level security;
 alter table public.notices enable row level security;
+alter table public.expense_categories enable row level security;
+alter table public.expenses enable row level security;
 
 drop policy if exists hostels_authenticated on public.hostels;
 create policy hostels_authenticated on public.hostels for all using (auth.role() = 'authenticated');
@@ -205,3 +228,7 @@ drop policy if exists tasks_authenticated on public.tasks;
 create policy tasks_authenticated on public.tasks for all using (auth.role() = 'authenticated');
 drop policy if exists notices_authenticated on public.notices;
 create policy notices_authenticated on public.notices for all using (auth.role() = 'authenticated');
+drop policy if exists expense_categories_authenticated on public.expense_categories;
+create policy expense_categories_authenticated on public.expense_categories for all using (auth.role() = 'authenticated');
+drop policy if exists expenses_authenticated on public.expenses;
+create policy expenses_authenticated on public.expenses for all using (auth.role() = 'authenticated');
