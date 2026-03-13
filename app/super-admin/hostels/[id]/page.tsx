@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
+import { uploadBedPicture } from '@/lib/supabase';
 
 export default function BuildingDetailPage() {
   const params = useParams();
@@ -23,6 +24,10 @@ export default function BuildingDetailPage() {
   const [roomModal, setRoomModal] = useState(false);
   const [bedModal, setBedModal] = useState(false);
   const [assignModal, setAssignModal] = useState<{ bedId: string; bedNumber: string } | null>(null);
+  const [editRoomModal, setEditRoomModal] = useState<{ id: string; roomNumber: string; floor: number; totalBeds: number } | null>(null);
+  const [editRoomNumber, setEditRoomNumber] = useState('');
+  const [editRoomFloor, setEditRoomFloor] = useState(1);
+  const [editRoomTotalBeds, setEditRoomTotalBeds] = useState(1);
 
   const [unitNumber, setUnitNumber] = useState('');
   const [unitFloor, setUnitFloor] = useState(1);
@@ -31,8 +36,17 @@ export default function BuildingDetailPage() {
   const [roomTotalBeds, setRoomTotalBeds] = useState(1);
   const [bedNumber, setBedNumber] = useState('');
   const [bedBasePrice, setBedBasePrice] = useState(0);
+  const [bedPictureFile, setBedPictureFile] = useState<File | null>(null);
   const [assigneeName, setAssigneeName] = useState('');
   const [assignPrice, setAssignPrice] = useState('');
+  const [editBedModal, setEditBedModal] = useState<{ id: string; bedNumber: string; basePrice: number; pictureUrl: string; assigneeName: string; assignmentPrice: number | null } | null>(null);
+  const [editBedNumber, setEditBedNumber] = useState('');
+  const [editBedBasePrice, setEditBedBasePrice] = useState(0);
+  const [editBedPictureFile, setEditBedPictureFile] = useState<File | null>(null);
+  const [editBedPictureUrl, setEditBedPictureUrl] = useState('');
+  const [editAssigneeName, setEditAssigneeName] = useState('');
+  const [editAssignmentPrice, setEditAssignmentPrice] = useState('');
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     if (!buildingId) return;
@@ -111,6 +125,29 @@ export default function BuildingDetailPage() {
     }
   };
 
+  const openEditRoom = (r: any) => {
+    setEditRoomModal({ id: r.id, roomNumber: r.roomNumber, floor: r.floor, totalBeds: r.totalBeds });
+    setEditRoomNumber(r.roomNumber);
+    setEditRoomFloor(r.floor);
+    setEditRoomTotalBeds(r.totalBeds);
+  };
+
+  const handleEditRoom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editRoomModal) return;
+    try {
+      await api.patch(`/rooms/${editRoomModal.id}`, {
+        roomNumber: editRoomNumber.trim(),
+        floor: editRoomFloor,
+        totalBeds: editRoomTotalBeds,
+      });
+      setEditRoomModal(null);
+      refreshRooms();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to update room');
+    }
+  };
+
   const handleAddBed = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedRoomId) return;
@@ -120,18 +157,34 @@ export default function BuildingDetailPage() {
       return;
     }
     try {
+      setUploading(true);
       const res = await api.post('/beds', { roomId: selectedRoomId, bedNumber: num, basePrice: bedBasePrice });
+      const raw = res.data?.bed ?? res.data;
+      const bedId = raw?.id ?? raw?._id;
+
+      let pictureUrl: string | null = null;
+      if (bedPictureFile && bedId) {
+        try {
+          pictureUrl = await uploadBedPicture(bedPictureFile, bedId);
+          await api.patch(`/beds/${bedId}`, { pictureUrl });
+        } catch (uploadErr: unknown) {
+          const msg = uploadErr instanceof Error ? uploadErr.message : 'Unknown upload error';
+          alert(`Bed created but image upload failed: ${msg}`);
+        }
+      }
+
       setBedModal(false);
       setBedNumber('');
       setBedBasePrice(0);
-      const raw = res.data?.bed ?? res.data;
-      if (raw && (raw.id || raw._id)) {
+      setBedPictureFile(null);
+      if (raw && bedId) {
         const newRow = {
-          id: raw.id ?? raw._id,
-          _id: raw._id ?? raw.id,
+          id: bedId,
+          _id: bedId,
           roomId: raw.roomId ?? raw.room_id ?? selectedRoomId,
           bedNumber: raw.bedNumber ?? raw.bed_number ?? num,
           basePrice: Number(raw.basePrice ?? raw.base_price ?? bedBasePrice),
+          pictureUrl,
           residentId: null,
           resident: null,
           assignmentPrice: null,
@@ -140,9 +193,10 @@ export default function BuildingDetailPage() {
         };
         setBeds((prev) => [...prev, newRow]);
       }
-      // Do not call refreshBeds() here: if GET fails it overwrites state with [] and the new bed disappears
     } catch (err: any) {
       alert(err.response?.data?.message || 'Failed to add bed');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -167,6 +221,50 @@ export default function BuildingDetailPage() {
       refreshBeds();
     } catch (err: any) {
       alert(err.response?.data?.message || 'Failed to unassign');
+    }
+  };
+
+  const openEditBed = (b: any) => {
+    setEditBedModal({
+      id: b.id,
+      bedNumber: b.bedNumber,
+      basePrice: b.basePrice,
+      pictureUrl: b.pictureUrl || '',
+      assigneeName: b.assigneeName || '',
+      assignmentPrice: b.assignmentPrice,
+    });
+    setEditBedNumber(b.bedNumber);
+    setEditBedBasePrice(b.basePrice);
+    setEditBedPictureUrl(b.pictureUrl || '');
+    setEditBedPictureFile(null);
+    setEditAssigneeName(b.assigneeName || '');
+    setEditAssignmentPrice(b.assignmentPrice != null ? String(b.assignmentPrice) : '');
+  };
+
+  const handleEditBed = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editBedModal) return;
+    try {
+      setUploading(true);
+      let pictureUrl = editBedPictureUrl;
+      if (editBedPictureFile) {
+        pictureUrl = await uploadBedPicture(editBedPictureFile, editBedModal.id);
+      }
+      await api.patch(`/beds/${editBedModal.id}`, {
+        bedNumber: editBedNumber.trim(),
+        basePrice: editBedBasePrice,
+        pictureUrl: pictureUrl || null,
+        assigneeName: editAssigneeName.trim() || null,
+        assignmentPrice: editAssignmentPrice !== '' ? Number(editAssignmentPrice) : undefined,
+      });
+      setEditBedModal(null);
+      setEditBedPictureFile(null);
+      refreshBeds();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : (err && typeof err === 'object' && 'response' in err ? (err as any).response?.data?.message : null) || 'Failed to update bed';
+      alert(msg);
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -285,7 +383,14 @@ export default function BuildingDetailPage() {
                           <td className="px-4 py-2 text-sm font-medium text-gray-900">{r.roomNumber}</td>
                           <td className="px-4 py-2 text-sm text-gray-600">{r.floor}</td>
                           <td className="px-4 py-2 text-sm text-gray-600">{r.totalBeds}</td>
-                          <td className="px-4 py-2 text-right">
+                          <td className="px-4 py-2 text-right space-x-2">
+                            <button
+                              type="button"
+                              onClick={() => openEditRoom(r)}
+                              className="text-gray-600 hover:text-gray-900 text-sm font-medium"
+                            >
+                              Edit
+                            </button>
                             <button
                               type="button"
                               onClick={() => {
@@ -323,6 +428,7 @@ export default function BuildingDetailPage() {
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Bed</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Base price</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Picture</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Assigned to</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Client price</th>
                     <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -331,7 +437,7 @@ export default function BuildingDetailPage() {
                 <tbody className="divide-y divide-gray-200">
                   {beds.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-6 text-center text-gray-500 text-sm">
+                      <td colSpan={6} className="px-4 py-6 text-center text-gray-500 text-sm">
                         No beds. Add beds and assign to residents (each can have a different price).
                       </td>
                     </tr>
@@ -341,12 +447,28 @@ export default function BuildingDetailPage() {
                         <td className="px-4 py-2 text-sm font-medium text-gray-900">{b.bedNumber}</td>
                         <td className="px-4 py-2 text-sm text-gray-600">${b.basePrice}</td>
                         <td className="px-4 py-2 text-sm text-gray-600">
+                          {b.pictureUrl ? (
+                            <a href={b.pictureUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 underline">
+                              View
+                            </a>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-sm text-gray-600">
                           {b.assigneeName || b.resident?.name || '—'}
                         </td>
                         <td className="px-4 py-2 text-sm text-gray-600">
                           {b.assignmentPrice != null ? `$${b.assignmentPrice}` : '—'}
                         </td>
-                        <td className="px-4 py-2 text-right">
+                        <td className="px-4 py-2 text-right space-x-2">
+                          <button
+                            type="button"
+                            onClick={() => openEditBed(b)}
+                            className="text-gray-600 hover:text-gray-900 text-sm font-medium"
+                          >
+                            Edit
+                          </button>
                           {b.residentId ? (
                             <button
                               type="button"
@@ -415,37 +537,37 @@ export default function BuildingDetailPage() {
         {roomModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-xl">
-              <h4 className="text-lg font-semibold mb-4">Add Room</h4>
+              <h4 className="text-lg font-semibold mb-4 text-gray-900">Add Room</h4>
               <form onSubmit={handleAddRoom} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Room number</label>
+                  <label className="block text-sm font-medium text-gray-900">Room number</label>
                   <input
                     type="text"
                     value={roomNumber}
                     onChange={(e) => setRoomNumber(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
                     placeholder="e.g. R1, R2"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Floor</label>
+                  <label className="block text-sm font-medium text-gray-900">Floor</label>
                   <input
                     type="number"
                     min={0}
                     value={roomFloor}
                     onChange={(e) => setRoomFloor(Number(e.target.value))}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Number of beds in this room</label>
+                  <label className="block text-sm font-medium text-gray-900">Number of beds in this room</label>
                   <input
                     type="number"
                     min={1}
                     value={roomTotalBeds}
                     onChange={(e) => setRoomTotalBeds(Number(e.target.value))}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
                   />
                 </div>
                 <div className="flex gap-2 justify-end">
@@ -464,16 +586,16 @@ export default function BuildingDetailPage() {
         {bedModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-xl">
-              <h4 className="text-lg font-semibold mb-4">Add Bed to this room</h4>
+              <h4 className="text-lg font-semibold mb-4 text-gray-900">Add Bed to this room</h4>
               <p className="text-sm text-gray-500 mb-3">Price is set when you assign the bed to a resident.</p>
               <form onSubmit={handleAddBed} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Bed number (unique in this room)</label>
+                  <label className="block text-sm font-medium text-gray-900">Bed number (unique in this room)</label>
                   <input
                     type="text"
                     value={bedNumber}
                     onChange={(e) => setBedNumber(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
                     placeholder={beds.length === 0 ? 'e.g. B1' : `e.g. B${beds.length + 1}`}
                     required
                   />
@@ -484,22 +606,188 @@ export default function BuildingDetailPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Base price ($) — optional, can set when assigning</label>
+                  <label className="block text-sm font-medium text-gray-900">Base price ($) — optional, can set when assigning</label>
                   <input
                     type="number"
                     min={0}
                     step={0.01}
                     value={bedBasePrice}
                     onChange={(e) => setBedBasePrice(Number(e.target.value))}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">Picture</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setBedPictureFile(e.target.files?.[0] || null)}
+                    className="mt-1 block w-full text-sm text-gray-900 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                  />
+                  {bedPictureFile && (
+                    <div className="mt-2">
+                      <img
+                        src={URL.createObjectURL(bedPictureFile)}
+                        alt="Preview"
+                        className="w-24 h-24 object-cover rounded-md border border-gray-200"
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <button type="button" onClick={() => { setBedModal(false); setBedPictureFile(null); }} className="px-4 py-2 text-gray-600">
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={uploading} className="px-4 py-2 bg-green-600 text-white rounded-lg disabled:opacity-50">
+                    {uploading ? 'Uploading...' : 'Add'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {editBedModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-xl max-h-[90vh] overflow-y-auto">
+              <h4 className="text-lg font-semibold mb-4 text-gray-900">Edit Bed {editBedModal.bedNumber}</h4>
+              <form onSubmit={handleEditBed} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">Bed number</label>
+                  <input
+                    type="text"
+                    value={editBedNumber}
+                    onChange={(e) => setEditBedNumber(e.target.value)}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">Base price ($)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={editBedBasePrice}
+                    onChange={(e) => setEditBedBasePrice(Number(e.target.value))}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">Picture</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null;
+                      setEditBedPictureFile(file);
+                      if (file) setEditBedPictureUrl('');
+                    }}
+                    className="mt-1 block w-full text-sm text-gray-900 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                  />
+                  {editBedPictureFile ? (
+                    <div className="mt-2">
+                      <img
+                        src={URL.createObjectURL(editBedPictureFile)}
+                        alt="New preview"
+                        className="w-24 h-24 object-cover rounded-md border border-gray-200"
+                      />
+                    </div>
+                  ) : editBedPictureUrl ? (
+                    <div className="mt-2 flex items-center gap-3">
+                      <img
+                        src={editBedPictureUrl}
+                        alt="Current"
+                        className="w-24 h-24 object-cover rounded-md border border-gray-200"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setEditBedPictureUrl('')}
+                        className="text-red-600 hover:text-red-800 text-xs font-medium"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">Assigned to</label>
+                  <input
+                    type="text"
+                    value={editAssigneeName}
+                    onChange={(e) => setEditAssigneeName(e.target.value)}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
+                    placeholder="Assignee name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">Client price ($)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={editAssignmentPrice}
+                    onChange={(e) => setEditAssignmentPrice(e.target.value)}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
+                    placeholder="Client price"
+                  />
+                </div>
+
+                <div className="flex gap-2 justify-end pt-2">
+                  <button type="button" onClick={() => { setEditBedModal(null); setEditBedPictureFile(null); }} className="px-4 py-2 text-gray-600">
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={uploading} className="px-4 py-2 bg-black text-yellow-400 rounded-lg disabled:opacity-50">
+                    {uploading ? 'Uploading...' : 'Save'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {editRoomModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-xl">
+              <h4 className="text-lg font-semibold mb-4 text-gray-900">Edit Room {editRoomModal.roomNumber}</h4>
+              <form onSubmit={handleEditRoom} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">Room number</label>
+                  <input
+                    type="text"
+                    value={editRoomNumber}
+                    onChange={(e) => setEditRoomNumber(e.target.value)}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">Floor</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editRoomFloor}
+                    onChange={(e) => setEditRoomFloor(Number(e.target.value))}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">Number of beds</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={editRoomTotalBeds}
+                    onChange={(e) => setEditRoomTotalBeds(Number(e.target.value))}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
                   />
                 </div>
                 <div className="flex gap-2 justify-end">
-                  <button type="button" onClick={() => setBedModal(false)} className="px-4 py-2 text-gray-600">
+                  <button type="button" onClick={() => setEditRoomModal(null)} className="px-4 py-2 text-gray-600">
                     Cancel
                   </button>
-                  <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg">
-                    Add
+                  <button type="submit" className="px-4 py-2 bg-black text-yellow-400 rounded-lg">
+                    Save
                   </button>
                 </div>
               </form>
@@ -510,28 +798,28 @@ export default function BuildingDetailPage() {
         {assignModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-xl">
-              <h4 className="text-lg font-semibold mb-2">Assign bed {assignModal.bedNumber}</h4>
+              <h4 className="text-lg font-semibold mb-2 text-gray-900">Assign bed {assignModal.bedNumber}</h4>
               <form onSubmit={handleAssignBed} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Assignee name</label>
+                  <label className="block text-sm font-medium text-gray-900">Assignee name</label>
                   <input
                     type="text"
                     value={assigneeName}
                     onChange={(e) => setAssigneeName(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
                     placeholder="Enter assignee name"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Price ($)</label>
+                  <label className="block text-sm font-medium text-gray-900">Price ($)</label>
                   <input
                     type="number"
                     min={0}
                     step={0.01}
                     value={assignPrice}
                     onChange={(e) => setAssignPrice(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
                     required
                   />
                 </div>

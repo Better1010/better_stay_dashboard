@@ -119,12 +119,50 @@ const getHostels = async (): Promise<ApiResponse> => {
   const res = await supabase.from('hostels').select('*').order('created_at', { ascending: false });
   throwIfError(res.error, 'Failed to load hostels');
 
+  const hostelIds = (res.data || []).map((h: any) => h.id as string);
+
+  let roomCounts: Record<string, number> = {};
+  let bedCounts: Record<string, number> = {};
+
+  if (hostelIds.length > 0) {
+    const roomsRes = await supabase.from('rooms').select('id, hostel_id').in('hostel_id', hostelIds);
+    if (!roomsRes.error && roomsRes.data) {
+      for (const r of roomsRes.data) {
+        roomCounts[r.hostel_id] = (roomCounts[r.hostel_id] || 0) + 1;
+      }
+      const roomIds = roomsRes.data.map((r: any) => r.id as string);
+      if (roomIds.length > 0) {
+        const bedsRes = await supabase.from('beds').select('id, room_id').in('room_id', roomIds);
+        if (!bedsRes.error && bedsRes.data) {
+          const roomToHostel: Record<string, string> = {};
+          for (const r of roomsRes.data) roomToHostel[r.id] = r.hostel_id;
+          for (const b of bedsRes.data) {
+            const hId = roomToHostel[b.room_id];
+            if (hId) bedCounts[hId] = (bedCounts[hId] || 0) + 1;
+          }
+        }
+      }
+    }
+  }
+
   const hostels = (res.data || []).map((h: any) => ({
     _id: h.id,
     ...h,
     adminId: h.admin_id,
+    total_rooms: roomCounts[h.id] || 0,
+    total_beds: bedCounts[h.id] || 0,
   }));
   return { data: { hostels } };
+};
+
+const deleteHostel = async (id: string): Promise<ApiResponse> => {
+  requireAuthUser();
+  const existing = await supabase.from('hostels').select('id').eq('id', id).single();
+  throwIfError(existing.error, 'Building not found');
+  if (!existing.data) throw new ApiRequestError(404, 'Building not found');
+  const res = await supabase.from('hostels').delete().eq('id', id);
+  throwIfError(res.error, 'Failed to delete building');
+  return { data: { message: 'Building deleted' } };
 };
 
 const createHostel = async (payload: any): Promise<ApiResponse> => {
@@ -283,6 +321,26 @@ const createRoom = async (payload: any): Promise<ApiResponse> => {
   };
 };
 
+const updateRoom = async (id: string, payload: any): Promise<ApiResponse> => {
+  requireAuthUser();
+  const existing = await supabase.from('rooms').select('*').eq('id', id).single();
+  throwIfError(existing.error, 'Room not found');
+  if (!existing.data) throw new ApiRequestError(404, 'Room not found');
+  const updates: any = { updated_at: nowIso() };
+  if (payload?.roomNumber != null) updates.room_number = String(payload.roomNumber).trim();
+  if (payload?.floor != null) updates.floor = Number(payload.floor);
+  if (payload?.totalBeds != null) updates.total_beds = Number(payload.totalBeds);
+  if (payload?.rent != null) updates.rent = Number(payload.rent);
+  const res = await supabase.from('rooms').update(updates).eq('id', id).select('*').single();
+  if (res.error) {
+    if (res.error.code === '23505') {
+      throw new ApiRequestError(409, 'A room with that number already exists in this building.');
+    }
+    throw new ApiRequestError(400, res.error.message || 'Failed to update room');
+  }
+  return { data: { room: { _id: res.data.id, id: res.data.id, roomNumber: res.data.room_number, floor: res.data.floor, totalBeds: res.data.total_beds, rent: res.data.rent } } };
+};
+
 const getBeds = async (roomId: string): Promise<ApiResponse> => {
   requireAuthUser();
   const roomRes = await supabase.from('rooms').select('hostel_id').eq('id', roomId).single();
@@ -313,6 +371,7 @@ const getBeds = async (roomId: string): Promise<ApiResponse> => {
       roomId: b.room_id,
       bedNumber: b.bed_number,
       basePrice: b.base_price ?? 0,
+      pictureUrl: b.picture_url ?? null,
       residentId: b.resident_id,
       assignmentPrice: assignment?.price ?? null,
       assigneeName: assigneeName || null,
@@ -379,9 +438,27 @@ const updateBed = async (id: string, payload: any): Promise<ApiResponse> => {
   if (!roomRes.data) throw new ApiRequestError(404, 'Room not found');
   const updates: any = { updated_at: nowIso() };
   if (payload?.basePrice != null) updates.base_price = Number(payload.basePrice);
+  if (payload?.bedNumber != null) updates.bed_number = String(payload.bedNumber).trim();
+  if (payload?.pictureUrl !== undefined) updates.picture_url = payload.pictureUrl || null;
   const res = await supabase.from('beds').update(updates).eq('id', id).select('*').single();
-  throwIfError(res.error, 'Failed to update bed');
-  return { data: { bed: { _id: res.data.id, basePrice: res.data.base_price } } };
+  if (res.error) {
+    if (res.error.code === '23505') {
+      throw new ApiRequestError(409, 'A bed with that number already exists in this room.');
+    }
+    throw new ApiRequestError(400, res.error.message || 'Failed to update bed');
+  }
+
+  if (payload?.assigneeName !== undefined || payload?.assignmentPrice !== undefined) {
+    const existingAssign = await supabase.from('bed_assignments').select('*').eq('bed_id', id).is('ended_at', null).maybeSingle();
+    if (existingAssign.data) {
+      const assignUpdates: any = { updated_at: nowIso() };
+      if (payload.assigneeName !== undefined) assignUpdates.assignee_name = payload.assigneeName || null;
+      if (payload.assignmentPrice !== undefined) assignUpdates.price = Number(payload.assignmentPrice);
+      await supabase.from('bed_assignments').update(assignUpdates).eq('id', existingAssign.data.id);
+    }
+  }
+
+  return { data: { bed: { _id: res.data.id, id: res.data.id, bedNumber: res.data.bed_number, basePrice: res.data.base_price, pictureUrl: res.data.picture_url } } };
 };
 
 const assignBed = async (bedId: string, payload: any): Promise<ApiResponse> => {
@@ -702,6 +779,127 @@ const getNotices = async (): Promise<ApiResponse> => {
   };
 };
 
+const getAllUnits = async (): Promise<ApiResponse> => {
+  requireAuthUser();
+  const res = await supabase
+    .from('units')
+    .select('*, hostels(name)')
+    .order('floor', { ascending: true })
+    .order('unit_number', { ascending: true });
+  throwIfError(res.error, 'Failed to load units');
+  const units = (res.data || []).map((u: any) => ({
+    id: u.id,
+    _id: u.id,
+    hostelId: u.hostel_id,
+    hostelName: u.hostels?.name ?? '',
+    unitNumber: u.unit_number,
+    floor: u.floor,
+  }));
+  return { data: { units } };
+};
+
+const getExpenseCategories = async (): Promise<ApiResponse> => {
+  requireAuthUser();
+  const res = await supabase.from('expense_categories').select('*').order('name', { ascending: true });
+  throwIfError(res.error, 'Failed to load expense categories');
+  const categories = (res.data || []).map((c: any) => ({
+    id: c.id,
+    name: c.name,
+    createdAt: c.created_at,
+  }));
+  return { data: { categories } };
+};
+
+const createExpenseCategory = async (payload: any): Promise<ApiResponse> => {
+  requireAuthUser();
+  const name = payload?.name?.trim();
+  if (!name) throw new ApiRequestError(400, 'Category name is required');
+  const res = await supabase
+    .from('expense_categories')
+    .insert({ name, created_at: nowIso() })
+    .select('*')
+    .single();
+  throwIfError(res.error, res.error?.message || 'Failed to create category');
+  return { data: { category: { id: res.data.id, name: res.data.name, createdAt: res.data.created_at } } };
+};
+
+const getExpenses = async (): Promise<ApiResponse> => {
+  requireAuthUser();
+  const res = await supabase
+    .from('expenses')
+    .select('*, units(unit_number, floor, hostels(name)), expense_categories(name)')
+    .order('expense_date', { ascending: false })
+    .order('created_at', { ascending: false });
+  throwIfError(res.error, 'Failed to load expenses');
+  const expenses = (res.data || []).map((e: any) => {
+    const u = e.units || {};
+    const h = u.hostels || u.hostel || {};
+    return {
+    id: e.id,
+    unitId: e.unit_id,
+    unitNumber: u.unit_number ?? '',
+    unitFloor: u.floor ?? '',
+    hostelName: (typeof h === 'object' && h !== null && 'name' in h ? h.name : '') ?? '',
+    expenseName: e.expense_name,
+    categoryId: e.category_id,
+    categoryName: e.expense_categories?.name ?? '',
+    amount: Number(e.amount),
+    expenseDate: e.expense_date,
+    notes: e.notes ?? '',
+    createdAt: e.created_at,
+  };
+  });
+  return { data: { expenses } };
+};
+
+const createExpense = async (payload: any): Promise<ApiResponse> => {
+  requireAuthUser();
+  const { unitId, expenseName, categoryId, amount, expenseDate, notes } = payload || {};
+  if (!unitId || !expenseName?.trim() || !categoryId || amount == null || !expenseDate) {
+    throw new ApiRequestError(400, 'Unit, expense name, category, amount and date are required');
+  }
+  const res = await supabase
+    .from('expenses')
+    .insert({
+      unit_id: unitId,
+      expense_name: String(expenseName).trim(),
+      category_id: categoryId,
+      amount: Number(amount),
+      expense_date: expenseDate,
+      notes: notes ? String(notes).trim() : null,
+      created_at: nowIso(),
+    })
+    .select('*')
+    .single();
+  throwIfError(res.error, res.error?.message || 'Failed to create expense');
+  return { data: { expense: { id: res.data.id, unitId: res.data.unit_id, expenseName: res.data.expense_name, categoryId: res.data.category_id, amount: Number(res.data.amount), expenseDate: res.data.expense_date, notes: res.data.notes, createdAt: res.data.created_at } } };
+};
+
+const updateExpense = async (id: string, payload: any): Promise<ApiResponse> => {
+  requireAuthUser();
+  const { expenseName, categoryId, amount, expenseDate, notes, unitId } = payload || {};
+  const updates: Record<string, unknown> = {};
+  if (expenseName !== undefined) updates.expense_name = String(expenseName).trim();
+  if (categoryId !== undefined) updates.category_id = categoryId;
+  if (amount !== undefined) updates.amount = Number(amount);
+  if (expenseDate !== undefined) updates.expense_date = expenseDate;
+  if (notes !== undefined) updates.notes = notes ? String(notes).trim() : null;
+  if (unitId !== undefined) updates.unit_id = unitId;
+  if (Object.keys(updates).length === 0) {
+    throw new ApiRequestError(400, 'No fields to update');
+  }
+  const res = await supabase.from('expenses').update(updates).eq('id', id).select('*').single();
+  throwIfError(res.error, res.error?.message || 'Failed to update expense');
+  return { data: { expense: res.data } };
+};
+
+const deleteExpense = async (id: string): Promise<ApiResponse> => {
+  requireAuthUser();
+  const res = await supabase.from('expenses').delete().eq('id', id);
+  throwIfError(res.error, res.error?.message || 'Failed to delete expense');
+  return { data: { success: true } };
+};
+
 const dispatch = async (method: Method, path: string, payload?: any): Promise<ApiResponse> => {
   if (method === 'POST' && path === '/auth/login') return authLogin(payload);
   if (method === 'POST' && path === '/auth/signup') return authSignup(payload);
@@ -716,10 +914,15 @@ const dispatch = async (method: Method, path: string, payload?: any): Promise<Ap
 
   if (method === 'GET' && path === '/hostels') return getHostels();
   if (method === 'POST' && path === '/hostels') return createHostel(payload);
+  if (method === 'DELETE' && path.match(/^\/hostels\/[^/]+$/)) {
+    const id = getPathParam(path, /^\/hostels\/([^/]+)$/);
+    if (!id) throw new ApiRequestError(404, 'Not found');
+    return deleteHostel(id);
+  }
   if (method === 'GET' && path.startsWith('/units') && !path.match(/^\/units\/[^/]+/)) {
     const hostelId = getQueryParam(path, 'hostelId');
-    if (!hostelId) throw new ApiRequestError(400, 'hostelId is required');
-    return getUnits(hostelId);
+    if (hostelId) return getUnits(hostelId);
+    return getAllUnits();
   }
   if (method === 'POST' && path === '/units') return createUnit(payload);
   if (method === 'PATCH' && path.match(/^\/units\/[^/]+$/)) {
@@ -743,6 +946,11 @@ const dispatch = async (method: Method, path: string, payload?: any): Promise<Ap
     return getRooms({ unitId: unitId || undefined, hostelId: hostelId || undefined });
   }
   if (method === 'POST' && path === '/rooms') return createRoom(payload);
+  if (method === 'PATCH' && path.match(/^\/rooms\/[^/]+$/) && !path.includes('/beds')) {
+    const id = getPathParam(path, /^\/rooms\/([^/]+)$/);
+    if (!id) throw new ApiRequestError(404, 'Not found');
+    return updateRoom(id, payload);
+  }
   if (method === 'GET' && path === '/rooms/my-room') return getMyRoom();
   if (method === 'POST' && path === '/beds') return createBed(payload);
   if (method === 'PATCH' && path.match(/^\/beds\/[^/]+$/) && !path.includes('/assign') && !path.includes('/unassign')) {
@@ -784,6 +992,21 @@ const dispatch = async (method: Method, path: string, payload?: any): Promise<Ap
 
   if (method === 'GET' && path === '/notices') return getNotices();
 
+  if (method === 'GET' && path === '/expense-categories') return getExpenseCategories();
+  if (method === 'POST' && path === '/expense-categories') return createExpenseCategory(payload);
+  if (method === 'GET' && path === '/expenses') return getExpenses();
+  if (method === 'POST' && path === '/expenses') return createExpense(payload);
+  if (method === 'PATCH' && path.match(/^\/expenses\/[^/]+$/)) {
+    const id = getPathParam(path, /^\/expenses\/([^/]+)$/);
+    if (!id) throw new ApiRequestError(404, 'Not found');
+    return updateExpense(id, payload);
+  }
+  if (method === 'DELETE' && path.match(/^\/expenses\/[^/]+$/)) {
+    const id = getPathParam(path, /^\/expenses\/([^/]+)$/);
+    if (!id) throw new ApiRequestError(404, 'Not found');
+    return deleteExpense(id);
+  }
+
   throw new ApiRequestError(404, `Unsupported endpoint: ${method} ${path}`);
 };
 
@@ -791,6 +1014,7 @@ const api = {
   get: (path: string) => dispatch('GET', path),
   post: (path: string, payload?: any) => dispatch('POST', path, payload),
   patch: (path: string, payload?: any) => dispatch('PATCH', path, payload),
+  delete: (path: string) => dispatch('DELETE', path),
 };
 
 export default api;
