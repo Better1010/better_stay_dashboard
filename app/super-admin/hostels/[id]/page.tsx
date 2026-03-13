@@ -499,26 +499,26 @@ export default function BuildingDetailPage() {
         {unitModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-xl">
-              <h4 className="text-lg font-semibold mb-4">Add Unit</h4>
+              <h4 className="text-lg font-semibold mb-4 text-gray-900">Add Unit</h4>
               <form onSubmit={handleAddUnit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Unit number (e.g. A100, B100)</label>
+                  <label className="block text-sm font-medium text-gray-900">Unit number (e.g. A100, B100)</label>
                   <input
                     type="text"
                     value={unitNumber}
                     onChange={(e) => setUnitNumber(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Floor (100 = 1st)</label>
+                  <label className="block text-sm font-medium text-gray-900">Floor (100 = 1st)</label>
                   <input
                     type="number"
                     min={0}
                     value={unitFloor}
                     onChange={(e) => setUnitFloor(Number(e.target.value))}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
                   />
                 </div>
                 <div className="flex gap-2 justify-end">
