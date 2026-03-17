@@ -5,7 +5,8 @@ import { useEffect, useState } from 'react';
 import api from '@/lib/api';
 
 type Category = { id: string; name: string };
-type Unit = { id: string; hostelName: string; unitNumber: string; floor: number };
+type Building = { id: string; name: string };
+type Unit = { id: string; hostelId: string; hostelName?: string; unitNumber: string; floor: number };
 
 function getErrorMessage(err: unknown, fallback: string): string {
   if (err && typeof err === 'object' && 'response' in err) {
@@ -18,6 +19,7 @@ function getErrorMessage(err: unknown, fallback: string): string {
 type Expense = {
   id: string;
   unitId: string;
+  hostelId: string;
   unitNumber: string;
   unitFloor: number;
   hostelName: string;
@@ -32,25 +34,31 @@ type Expense = {
 
 export default function SuperAdminExpensesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
-  const [units, setUnits] = useState<Unit[]>([]);
+  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [unitsForAdd, setUnitsForAdd] = useState<Unit[]>([]);
+  const [unitsForFilter, setUnitsForFilter] = useState<Unit[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [categoryName, setCategoryName] = useState('');
+  const [addBuildingId, setAddBuildingId] = useState('');
   const [unitId, setUnitId] = useState('');
   const [expenseName, setExpenseName] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [amount, setAmount] = useState('');
   const [expenseDate, setExpenseDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [notes, setNotes] = useState('');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
+  const [filterBuildingId, setFilterBuildingId] = useState('');
+  const [filterUnitId, setFilterUnitId] = useState('');
+
   const [editExpense, setEditExpense] = useState<Expense | null>(null);
+  const [editBuildingId, setEditBuildingId] = useState('');
+  const [editUnits, setEditUnits] = useState<Unit[]>([]);
   const [editExpenseName, setEditExpenseName] = useState('');
   const [editCategoryId, setEditCategoryId] = useState('');
   const [editAmount, setEditAmount] = useState('');
   const [editExpenseDate, setEditExpenseDate] = useState('');
-  const [editNotes, setEditNotes] = useState('');
   const [editUnitId, setEditUnitId] = useState('');
 
   const [deleteConfirm, setDeleteConfirm] = useState<Expense | null>(null);
@@ -63,12 +71,17 @@ export default function SuperAdminExpensesPage() {
 
   const openEditExpense = (exp: Expense) => {
     setEditExpense(exp);
+    setEditBuildingId(exp.hostelId);
+    setEditUnitId(exp.unitId);
     setEditExpenseName(exp.expenseName);
     setEditCategoryId(exp.categoryId);
     setEditAmount(String(exp.amount));
     setEditExpenseDate(exp.expenseDate ? exp.expenseDate.slice(0, 10) : '');
-    setEditNotes(exp.notes || '');
-    setEditUnitId(exp.unitId);
+    if (exp.hostelId) {
+      api.get(`/units?hostelId=${exp.hostelId}`).then((r) => setEditUnits(r.data?.units ?? [])).catch(() => setEditUnits([]));
+    } else {
+      setEditUnits([]);
+    }
   };
 
   const handleEditExpense = async (e: React.FormEvent) => {
@@ -80,7 +93,6 @@ export default function SuperAdminExpensesPage() {
         categoryId: editCategoryId,
         amount: Number(editAmount),
         expenseDate: editExpenseDate,
-        notes: editNotes.trim() || undefined,
         unitId: editUnitId,
       });
       setEditExpense(null);
@@ -111,17 +123,17 @@ export default function SuperAdminExpensesPage() {
     setLoading(true);
     Promise.all([
       api.get('/expense-categories'),
-      api.get('/units'),
+      api.get('/hostels'),
       api.get('/expenses'),
     ])
-      .then(([catRes, unitsRes, expRes]) => {
+      .then(([catRes, hostelsRes, expRes]) => {
         setCategories(catRes.data.categories || []);
-        setUnits(unitsRes.data.units || []);
+        setBuildings(hostelsRes.data?.hostels?.map((h: { id?: string; _id?: string; name: string }) => ({ id: h.id || h._id || '', name: h.name })) || []);
         setExpenses(expRes.data.expenses || []);
       })
       .catch(() => {
         setCategories([]);
-        setUnits([]);
+        setBuildings([]);
         setExpenses([]);
       })
       .finally(() => setLoading(false));
@@ -131,19 +143,19 @@ export default function SuperAdminExpensesPage() {
     let cancelled = false;
     Promise.all([
       api.get('/expense-categories'),
-      api.get('/units'),
+      api.get('/hostels'),
       api.get('/expenses'),
     ])
-      .then(([catRes, unitsRes, expRes]) => {
+      .then(([catRes, hostelsRes, expRes]) => {
         if (cancelled) return;
         setCategories(catRes.data.categories || []);
-        setUnits(unitsRes.data.units || []);
+        setBuildings(hostelsRes.data?.hostels?.map((h: { id?: string; _id?: string; name: string }) => ({ id: h.id || h._id || '', name: h.name })) || []);
         setExpenses(expRes.data.expenses || []);
       })
       .catch(() => {
         if (!cancelled) {
           setCategories([]);
-          setUnits([]);
+          setBuildings([]);
           setExpenses([]);
         }
       })
@@ -152,6 +164,30 @@ export default function SuperAdminExpensesPage() {
       });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!addBuildingId) {
+      setUnitsForAdd([]);
+      setUnitId('');
+      return;
+    }
+    api.get(`/units?hostelId=${addBuildingId}`).then((r) => {
+      setUnitsForAdd(r.data?.units ?? []);
+      setUnitId('');
+    }).catch(() => setUnitsForAdd([]));
+  }, [addBuildingId]);
+
+  useEffect(() => {
+    if (!filterBuildingId) {
+      setUnitsForFilter([]);
+      setFilterUnitId('');
+      return;
+    }
+    api.get(`/units?hostelId=${filterBuildingId}`).then((r) => {
+      setUnitsForFilter(r.data?.units ?? []);
+      setFilterUnitId('');
+    }).catch(() => setUnitsForFilter([]));
+  }, [filterBuildingId]);
 
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -169,8 +205,8 @@ export default function SuperAdminExpensesPage() {
 
   const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!unitId || !expenseName.trim() || !categoryId || !amount || !expenseDate) {
-      alert('Please fill Unit, Expense name, Category, Amount and Date');
+    if (!addBuildingId || !unitId || !expenseName.trim() || !categoryId || !amount || !expenseDate) {
+      alert('Please select Building, Unit, Category, Description, Amount and Date');
       return;
     }
     try {
@@ -180,12 +216,10 @@ export default function SuperAdminExpensesPage() {
         categoryId,
         amount: Number(amount),
         expenseDate,
-        notes: notes.trim() || undefined,
       });
       setExpenseName('');
       setAmount('');
       setExpenseDate(new Date().toISOString().slice(0, 10));
-      setNotes('');
       loadData();
     } catch (err: unknown) {
       alert(getErrorMessage(err, 'Failed to add expense'));
@@ -193,6 +227,12 @@ export default function SuperAdminExpensesPage() {
   };
 
   const formatDate = (d: string) => (d ? new Date(d).toLocaleDateString() : '');
+
+  const filteredExpenses = expenses.filter(
+    (e) =>
+      (!filterBuildingId || e.hostelId === filterBuildingId) &&
+      (!filterUnitId || e.unitId === filterUnitId)
+  );
 
   return (
     <DashboardLayout requiredRole={['super_admin']}>
@@ -229,10 +269,26 @@ export default function SuperAdminExpensesPage() {
           </form>
         </div>
 
-        {/* Add Expense (under selected unit) */}
+        {/* Add Expense */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Expense</h3>
           <form onSubmit={handleAddExpense} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Building</label>
+              <select
+                value={addBuildingId}
+                onChange={(e) => setAddBuildingId(e.target.value)}
+                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                required
+              >
+                <option value="">Select building first</option>
+                {buildings.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
               <select
@@ -240,25 +296,15 @@ export default function SuperAdminExpensesPage() {
                 onChange={(e) => setUnitId(e.target.value)}
                 className="block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
                 required
+                disabled={!addBuildingId}
               >
                 <option value="">Select unit</option>
-                {units.map((u) => (
+                {unitsForAdd.map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.hostelName} – {u.unitNumber} (Floor {u.floor})
+                    {u.unitNumber} (Floor {u.floor})
                   </option>
                 ))}
               </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Expense name</label>
-              <input
-                type="text"
-                value={expenseName}
-                onChange={(e) => setExpenseName(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
-                placeholder="e.g. Plumbing repair"
-                required
-              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
@@ -275,6 +321,17 @@ export default function SuperAdminExpensesPage() {
                   </option>
                 ))}
               </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <input
+                type="text"
+                value={expenseName}
+                onChange={(e) => setExpenseName(e.target.value)}
+                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                placeholder="e.g. Plumbing repair"
+                required
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
@@ -298,16 +355,6 @@ export default function SuperAdminExpensesPage() {
                 required
               />
             </div>
-            <div className="md:col-span-2 lg:col-span-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-              <input
-                type="text"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
-                placeholder="Optional"
-              />
-            </div>
             <div className="flex items-end">
               <button type="submit" className="px-4 py-2 bg-black text-yellow-400 rounded-lg hover:bg-gray-900 font-medium">
                 Add Expense
@@ -318,17 +365,52 @@ export default function SuperAdminExpensesPage() {
 
         {/* Expense list table */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <h3 className="text-lg font-semibold text-gray-900 p-4 border-b border-gray-200">Expense list</h3>
+          <div className="p-4 border-b border-gray-200 flex flex-wrap items-end gap-4">
+            <h3 className="text-lg font-semibold text-gray-900 mr-4">Expense list</h3>
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Building</label>
+                <select
+                  value={filterBuildingId}
+                  onChange={(e) => setFilterBuildingId(e.target.value)}
+                  className="block rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 min-w-[140px]"
+                >
+                  <option value="">All buildings</option>
+                  {buildings.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Unit</label>
+                <select
+                  value={filterUnitId}
+                  onChange={(e) => setFilterUnitId(e.target.value)}
+                  className="block rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 min-w-[120px]"
+                  disabled={!filterBuildingId}
+                >
+                  <option value="">All units</option>
+                  {unitsForFilter.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.unitNumber}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Building</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Unit</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Expense name</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Description</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Category</th>
                   <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Amount</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Notes</th>
                   <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Actions</th>
                 </tr>
               </thead>
@@ -339,17 +421,20 @@ export default function SuperAdminExpensesPage() {
                       Loading...
                     </td>
                   </tr>
-                ) : expenses.length === 0 ? (
+                ) : filteredExpenses.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
-                      No expenses yet. Add a category and an expense above.
+                      {expenses.length === 0
+                        ? 'No expenses yet. Add a category and an expense above.'
+                        : 'No expenses match the selected building/unit.'}
                     </td>
                   </tr>
                 ) : (
-                  expenses.map((e) => (
+                  filteredExpenses.map((e) => (
                     <tr key={e.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {e.hostelName} – {e.unitNumber} (Floor {e.unitFloor})
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{e.hostelName}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {e.unitNumber} (Floor {e.unitFloor})
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{e.expenseName}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{e.categoryName}</td>
@@ -357,7 +442,6 @@ export default function SuperAdminExpensesPage() {
                         ${Number(e.amount).toFixed(2)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{formatDate(e.expenseDate)}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate">{e.notes || '—'}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
                         <button
                           type="button"
@@ -388,23 +472,47 @@ export default function SuperAdminExpensesPage() {
               <h4 className="text-lg font-semibold mb-4 text-gray-900">Edit Expense</h4>
               <form onSubmit={handleEditExpense} className="space-y-4">
                 <div>
+                  <label className="block text-sm font-medium text-gray-900">Building</label>
+                  <select
+                    value={editBuildingId}
+                    onChange={(ev) => {
+                      const id = ev.target.value;
+                      setEditBuildingId(id);
+                      if (id) {
+                        api.get(`/units?hostelId=${id}`).then((r) => setEditUnits(r.data?.units ?? [])).catch(() => setEditUnits([]));
+                      } else setEditUnits([]);
+                      setEditUnitId('');
+                    }}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                    required
+                  >
+                    <option value="">Select building</option>
+                    {buildings.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-900">Unit</label>
                   <select
                     value={editUnitId}
                     onChange={(ev) => setEditUnitId(ev.target.value)}
                     className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
                     required
+                    disabled={!editBuildingId}
                   >
                     <option value="">Select unit</option>
-                    {units.map((u) => (
+                    {editUnits.map((u) => (
                       <option key={u.id} value={u.id}>
-                        {u.hostelName} – {u.unitNumber} (Floor {u.floor})
+                        {u.unitNumber} (Floor {u.floor})
                       </option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-900">Expense name</label>
+                  <label className="block text-sm font-medium text-gray-900">Description</label>
                   <input
                     type="text"
                     value={editExpenseName}
@@ -449,16 +557,6 @@ export default function SuperAdminExpensesPage() {
                     onChange={(ev) => setEditExpenseDate(ev.target.value)}
                     className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
                     required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-900">Notes</label>
-                  <input
-                    type="text"
-                    value={editNotes}
-                    onChange={(ev) => setEditNotes(ev.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
-                    placeholder="Optional"
                   />
                 </div>
                 <div className="flex gap-2 justify-end">

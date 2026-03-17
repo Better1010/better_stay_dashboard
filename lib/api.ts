@@ -266,7 +266,18 @@ const getRooms = async (queryParams?: { unitId?: string; hostelId?: string }): P
   const res = await query.order('floor', { ascending: true }).order('room_number', { ascending: true });
   throwIfError(res.error, 'Failed to load rooms');
 
-  const rooms = (res.data || []).map((r: any) => ({
+  const roomRows = res.data || [];
+  const roomIds = roomRows.map((r: any) => r.id);
+  let bedCountByRoom: Record<string, number> = {};
+  if (roomIds.length > 0) {
+    const bedsRes = await supabase.from('beds').select('room_id').in('room_id', roomIds);
+    for (const row of bedsRes.data || []) {
+      const rid = row.room_id;
+      bedCountByRoom[rid] = (bedCountByRoom[rid] || 0) + 1;
+    }
+  }
+
+  const rooms = roomRows.map((r: any) => ({
     _id: r.id,
     id: r.id,
     hostelId: r.hostel_id,
@@ -274,6 +285,7 @@ const getRooms = async (queryParams?: { unitId?: string; hostelId?: string }): P
     roomNumber: r.room_number,
     floor: r.floor,
     totalBeds: r.total_beds,
+    bedCount: bedCountByRoom[r.id] ?? 0,
     occupiedBeds: r.occupied_beds,
     rent: r.rent,
     amenities: r.amenities || [],
@@ -287,8 +299,8 @@ const getRooms = async (queryParams?: { unitId?: string; hostelId?: string }): P
 const createRoom = async (payload: any): Promise<ApiResponse> => {
   requireAuthUser();
   const { unitId, hostelId, roomNumber, floor, totalBeds, rent } = payload || {};
-  if (!hostelId || !roomNumber || floor == null) {
-    throw new ApiRequestError(400, 'hostelId, roomNumber and floor are required');
+  if (!hostelId || !roomNumber) {
+    throw new ApiRequestError(400, 'hostelId and roomNumber are required');
   }
   const res = await supabase
     .from('rooms')
@@ -296,8 +308,8 @@ const createRoom = async (payload: any): Promise<ApiResponse> => {
       hostel_id: hostelId,
       unit_id: unitId || null,
       room_number: String(roomNumber).trim(),
-      floor: Number(floor),
-      total_beds: totalBeds != null ? Number(totalBeds) : 1,
+      floor: floor != null ? Number(floor) : 0,
+      total_beds: totalBeds != null ? Number(totalBeds) : 0,
       rent: rent != null ? Number(rent) : 0,
       created_at: nowIso(),
       updated_at: nowIso(),
@@ -375,6 +387,10 @@ const getBeds = async (roomId: string): Promise<ApiResponse> => {
       residentId: b.resident_id,
       assignmentPrice: assignment?.price ?? null,
       assigneeName: assigneeName || null,
+      assigneeMobile: assignment?.mobile_number ?? null,
+      assigneeNidFrontUrl: assignment?.nid_picture_front_url ?? null,
+      assigneeNidBackUrl: assignment?.nid_picture_back_url ?? null,
+      assignedAt: assignment?.assigned_at ?? null,
       resident: b.resident_id ? { _id: b.resident_id, name: assigneeName ?? '', email: '', phone: '' } : (assigneeName ? { _id: null, name: assigneeName, email: '', phone: '' } : null),
       isOccupied: b.is_occupied,
       isActive: b.is_active,
@@ -463,11 +479,10 @@ const updateBed = async (id: string, payload: any): Promise<ApiResponse> => {
 
 const assignBed = async (bedId: string, payload: any): Promise<ApiResponse> => {
   const current = requireAuthUser();
-  const { assigneeName, price } = payload || {};
+  const { assigneeName, mobileNumber, nidFrontUrl, nidBackUrl, price } = payload || {};
   const name = typeof assigneeName === 'string' ? assigneeName.trim() : '';
-  if (!name || price == null) {
-    throw new ApiRequestError(400, 'Assignee name and price are required');
-  }
+  if (!name) throw new ApiRequestError(400, 'Assignee name is required');
+  if (!nidFrontUrl || !nidBackUrl) throw new ApiRequestError(400, 'NID front and back pictures are required');
   const bedRes = await supabase.from('beds').select('room_id, resident_id').eq('id', bedId).single();
   throwIfError(bedRes.error, 'Bed not found');
   if (!bedRes.data) throw new ApiRequestError(404, 'Bed not found');
@@ -485,7 +500,10 @@ const assignBed = async (bedId: string, payload: any): Promise<ApiResponse> => {
       bed_id: bedId,
       resident_id: null,
       assignee_name: name,
-      price: Number(price),
+      mobile_number: mobileNumber ? String(mobileNumber).trim() : null,
+      nid_picture_front_url: nidFrontUrl,
+      nid_picture_back_url: nidBackUrl,
+      price: price != null ? Number(price) : 0,
       assigned_by: current.id,
       assigned_at: nowIso(),
       created_at: nowIso(),
@@ -498,7 +516,7 @@ const assignBed = async (bedId: string, payload: any): Promise<ApiResponse> => {
     .from('beds')
     .update({ resident_id: null, is_occupied: true, updated_at: nowIso() })
     .eq('id', bedId);
-  return { data: { message: 'Bed assigned', assignment: { id: assignRes.data.id, price: assignRes.data.price, assigneeName: name } } };
+  return { data: { message: 'Bed assigned', assignment: { id: assignRes.data.id, assigneeName: name } } };
 };
 
 const unassignBed = async (bedId: string): Promise<ApiResponse> => {
@@ -509,10 +527,39 @@ const unassignBed = async (bedId: string): Promise<ApiResponse> => {
   const bedRes = await supabase.from('beds').select('room_id, resident_id').eq('id', bedId).single();
   throwIfError(bedRes.error, 'Bed not found');
   if (!bedRes.data) throw new ApiRequestError(404, 'Bed not found');
-  const roomRes = await supabase.from('rooms').select('hostel_id').eq('id', bedRes.data.room_id).single();
+  const roomRes = await supabase.from('rooms').select('hostel_id, unit_id').eq('id', bedRes.data.room_id).single();
   throwIfError(roomRes.error, 'Room not found');
   if (!roomRes.data) throw new ApiRequestError(404, 'Room not found');
-  const residentId = bedRes.data.resident_id;
+  const assignmentRes = await supabase
+    .from('bed_assignments')
+    .select('id, assignee_name, mobile_number, nid_picture_front_url, nid_picture_back_url, assigned_at')
+    .eq('bed_id', bedId)
+    .is('ended_at', null)
+    .maybeSingle();
+  if (assignmentRes.data) {
+    const a = assignmentRes.data;
+    const assignedAt = a.assigned_at ? new Date(a.assigned_at) : new Date();
+    const now = new Date();
+    let monthsStayed = 0;
+    if (assignedAt.getTime() <= now.getTime()) {
+      monthsStayed = Math.max(0, (now.getFullYear() - assignedAt.getFullYear()) * 12 + (now.getMonth() - assignedAt.getMonth()));
+    }
+    await supabase.from('client_history').insert({
+      assignee_name: a.assignee_name || 'Unknown',
+      mobile_number: a.mobile_number || null,
+      nid_picture_front_url: a.nid_picture_front_url || null,
+      nid_picture_back_url: a.nid_picture_back_url || null,
+      hostel_id: roomRes.data.hostel_id,
+      unit_id: roomRes.data.unit_id || null,
+      room_id: bedRes.data.room_id,
+      bed_id: bedId,
+      assigned_at: a.assigned_at,
+      unassigned_at: nowIso(),
+      months_stayed: monthsStayed,
+      total_payment: 0,
+      created_at: nowIso(),
+    });
+  }
   await supabase
     .from('bed_assignments')
     .update({ ended_at: nowIso(), updated_at: nowIso() })
@@ -827,7 +874,7 @@ const getExpenses = async (): Promise<ApiResponse> => {
   requireAuthUser();
   const res = await supabase
     .from('expenses')
-    .select('*, units(unit_number, floor, hostels(name)), expense_categories(name)')
+    .select('*, units(unit_number, floor, hostel_id, hostels(name)), expense_categories(name)')
     .order('expense_date', { ascending: false })
     .order('created_at', { ascending: false });
   throwIfError(res.error, 'Failed to load expenses');
@@ -837,6 +884,7 @@ const getExpenses = async (): Promise<ApiResponse> => {
     return {
     id: e.id,
     unitId: e.unit_id,
+    hostelId: u.hostel_id ?? '',
     unitNumber: u.unit_number ?? '',
     unitFloor: u.floor ?? '',
     hostelName: (typeof h === 'object' && h !== null && 'name' in h ? h.name : '') ?? '',
@@ -856,7 +904,7 @@ const createExpense = async (payload: any): Promise<ApiResponse> => {
   requireAuthUser();
   const { unitId, expenseName, categoryId, amount, expenseDate, notes } = payload || {};
   if (!unitId || !expenseName?.trim() || !categoryId || amount == null || !expenseDate) {
-    throw new ApiRequestError(400, 'Unit, expense name, category, amount and date are required');
+    throw new ApiRequestError(400, 'Unit, description, category, amount and date are required');
   }
   const res = await supabase
     .from('expenses')
@@ -898,6 +946,32 @@ const deleteExpense = async (id: string): Promise<ApiResponse> => {
   const res = await supabase.from('expenses').delete().eq('id', id);
   throwIfError(res.error, res.error?.message || 'Failed to delete expense');
   return { data: { success: true } };
+};
+
+const getClientHistory = async (): Promise<ApiResponse> => {
+  requireAuthUser();
+  const res = await supabase
+    .from('client_history')
+    .select('*, hostels(name), units(unit_number), rooms(room_number), beds(bed_number)')
+    .order('unassigned_at', { ascending: false });
+  throwIfError(res.error, 'Failed to load client history');
+  const list = (res.data || []).map((row: any) => ({
+    id: row.id,
+    assigneeName: row.assignee_name,
+    mobileNumber: row.mobile_number,
+    nidPictureFrontUrl: row.nid_picture_front_url,
+    nidPictureBackUrl: row.nid_picture_back_url,
+    buildingName: row.hostels?.name ?? '',
+    unitNumber: row.units?.unit_number ?? '',
+    roomNumber: row.rooms?.room_number ?? '',
+    bedNumber: row.beds?.bed_number ?? '',
+    assignedAt: row.assigned_at,
+    unassignedAt: row.unassigned_at,
+    monthsStayed: row.months_stayed ?? 0,
+    totalPayment: Number(row.total_payment ?? 0),
+    createdAt: row.created_at,
+  }));
+  return { data: { history: list } };
 };
 
 const dispatch = async (method: Method, path: string, payload?: any): Promise<ApiResponse> => {
@@ -1006,6 +1080,8 @@ const dispatch = async (method: Method, path: string, payload?: any): Promise<Ap
     if (!id) throw new ApiRequestError(404, 'Not found');
     return deleteExpense(id);
   }
+
+  if (method === 'GET' && path === '/client-history') return getClientHistory();
 
   throw new ApiRequestError(404, `Unsupported endpoint: ${method} ${path}`);
 };

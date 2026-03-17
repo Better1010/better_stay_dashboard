@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
-import { uploadBedPicture } from '@/lib/supabase';
+import { uploadBedPicture, uploadNidPicture } from '@/lib/supabase';
 
 export default function BuildingDetailPage() {
   const params = useParams();
@@ -19,33 +19,41 @@ export default function BuildingDetailPage() {
   const [loading, setLoading] = useState(true);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+  type ViewStep = 'units' | 'rooms' | 'beds';
+  const [viewStep, setViewStep] = useState<ViewStep>('units');
 
   const [unitModal, setUnitModal] = useState(false);
   const [roomModal, setRoomModal] = useState(false);
   const [bedModal, setBedModal] = useState(false);
   const [assignModal, setAssignModal] = useState<{ bedId: string; bedNumber: string } | null>(null);
-  const [editRoomModal, setEditRoomModal] = useState<{ id: string; roomNumber: string; floor: number; totalBeds: number } | null>(null);
+  const [viewAssigneeBed, setViewAssigneeBed] = useState<{
+    bedNumber: string;
+    assigneeName: string;
+    assigneeMobile: string | null;
+    assigneeNidFrontUrl: string | null;
+    assigneeNidBackUrl: string | null;
+    assignedAt: string | null;
+  } | null>(null);
+  const [editRoomModal, setEditRoomModal] = useState<{ id: string; roomNumber: string; totalBeds: number } | null>(null);
   const [editRoomNumber, setEditRoomNumber] = useState('');
-  const [editRoomFloor, setEditRoomFloor] = useState(1);
   const [editRoomTotalBeds, setEditRoomTotalBeds] = useState(1);
 
   const [unitNumber, setUnitNumber] = useState('');
   const [unitFloor, setUnitFloor] = useState(1);
   const [roomNumber, setRoomNumber] = useState('');
-  const [roomFloor, setRoomFloor] = useState(1);
-  const [roomTotalBeds, setRoomTotalBeds] = useState(1);
   const [bedNumber, setBedNumber] = useState('');
   const [bedBasePrice, setBedBasePrice] = useState(0);
   const [bedPictureFile, setBedPictureFile] = useState<File | null>(null);
   const [assigneeName, setAssigneeName] = useState('');
-  const [assignPrice, setAssignPrice] = useState('');
-  const [editBedModal, setEditBedModal] = useState<{ id: string; bedNumber: string; basePrice: number; pictureUrl: string; assigneeName: string; assignmentPrice: number | null } | null>(null);
+  const [assignMobile, setAssignMobile] = useState('');
+  const [assignNidFront, setAssignNidFront] = useState<File | null>(null);
+  const [assignNidBack, setAssignNidBack] = useState<File | null>(null);
+  const [editBedModal, setEditBedModal] = useState<{ id: string; bedNumber: string; basePrice: number; pictureUrl: string; assigneeName: string } | null>(null);
   const [editBedNumber, setEditBedNumber] = useState('');
   const [editBedBasePrice, setEditBedBasePrice] = useState(0);
   const [editBedPictureFile, setEditBedPictureFile] = useState<File | null>(null);
   const [editBedPictureUrl, setEditBedPictureUrl] = useState('');
   const [editAssigneeName, setEditAssigneeName] = useState('');
-  const [editAssignmentPrice, setEditAssignmentPrice] = useState('');
   const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
@@ -112,13 +120,11 @@ export default function BuildingDetailPage() {
         hostelId: buildingId,
         unitId: selectedUnitId || undefined,
         roomNumber: roomNumber.trim(),
-        floor: roomFloor,
-        totalBeds: roomTotalBeds,
+        floor: 0,
+        totalBeds: 0,
       });
       setRoomModal(false);
       setRoomNumber('');
-      setRoomFloor(1);
-      setRoomTotalBeds(1);
       refreshRooms();
     } catch (err: any) {
       alert(err.response?.data?.message || 'Failed to add room');
@@ -126,9 +132,8 @@ export default function BuildingDetailPage() {
   };
 
   const openEditRoom = (r: any) => {
-    setEditRoomModal({ id: r.id, roomNumber: r.roomNumber, floor: r.floor, totalBeds: r.totalBeds });
+    setEditRoomModal({ id: r.id, roomNumber: r.roomNumber, totalBeds: r.totalBeds });
     setEditRoomNumber(r.roomNumber);
-    setEditRoomFloor(r.floor);
     setEditRoomTotalBeds(r.totalBeds);
   };
 
@@ -138,7 +143,6 @@ export default function BuildingDetailPage() {
     try {
       await api.patch(`/rooms/${editRoomModal.id}`, {
         roomNumber: editRoomNumber.trim(),
-        floor: editRoomFloor,
         totalBeds: editRoomTotalBeds,
       });
       setEditRoomModal(null);
@@ -202,20 +206,39 @@ export default function BuildingDetailPage() {
 
   const handleAssignBed = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!assignModal || !assigneeName.trim() || assignPrice === '') return;
+    if (!assignModal || !assigneeName.trim()) return;
+    if (!assignNidFront || !assignNidBack) {
+      alert('NID front and back pictures are required.');
+      return;
+    }
     try {
-      await api.post(`/beds/${assignModal.bedId}/assign`, { assigneeName: assigneeName.trim(), price: Number(assignPrice) });
+      setUploading(true);
+      const prefix = `bed-${assignModal.bedId}`;
+      const [nidFrontUrl, nidBackUrl] = await Promise.all([
+        uploadNidPicture(assignNidFront, prefix),
+        uploadNidPicture(assignNidBack, prefix),
+      ]);
+      await api.post(`/beds/${assignModal.bedId}/assign`, {
+        assigneeName: assigneeName.trim(),
+        mobileNumber: assignMobile.trim() || undefined,
+        nidFrontUrl,
+        nidBackUrl,
+        price: 0,
+      });
       setAssignModal(null);
       setAssigneeName('');
-      setAssignPrice('');
+      setAssignMobile('');
+      setAssignNidFront(null);
+      setAssignNidBack(null);
       refreshBeds();
     } catch (err: any) {
       alert(err.response?.data?.message || 'Failed to assign bed');
+    } finally {
+      setUploading(false);
     }
   };
 
   const handleUnassign = async (bedId: string) => {
-    if (!confirm('Unassign this bed from the resident?')) return;
     try {
       await api.patch(`/beds/${bedId}/unassign`);
       refreshBeds();
@@ -231,14 +254,12 @@ export default function BuildingDetailPage() {
       basePrice: b.basePrice,
       pictureUrl: b.pictureUrl || '',
       assigneeName: b.assigneeName || '',
-      assignmentPrice: b.assignmentPrice,
     });
     setEditBedNumber(b.bedNumber);
     setEditBedBasePrice(b.basePrice);
     setEditBedPictureUrl(b.pictureUrl || '');
     setEditBedPictureFile(null);
     setEditAssigneeName(b.assigneeName || '');
-    setEditAssignmentPrice(b.assignmentPrice != null ? String(b.assignmentPrice) : '');
   };
 
   const handleEditBed = async (e: React.FormEvent) => {
@@ -255,7 +276,6 @@ export default function BuildingDetailPage() {
         basePrice: editBedBasePrice,
         pictureUrl: pictureUrl || null,
         assigneeName: editAssigneeName.trim() || null,
-        assignmentPrice: editAssignmentPrice !== '' ? Number(editAssignmentPrice) : undefined,
       });
       setEditBedModal(null);
       setEditBedPictureFile(null);
@@ -288,65 +308,78 @@ export default function BuildingDetailPage() {
           <h2 className="text-2xl font-bold text-gray-900">{building.name}</h2>
         </div>
 
-        <section>
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold text-gray-800">Units (floor + unit number)</h3>
-            <button
-              type="button"
-              onClick={() => setUnitModal(true)}
-              className="px-3 py-1.5 bg-black text-yellow-400 rounded-lg hover:bg-gray-800 text-sm font-medium"
-            >
-              + Add Unit
-            </button>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Unit number</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Floor</th>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {units.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="px-4 py-6 text-center text-gray-500 text-sm">
-                      No units. Add a unit (e.g. A100, B100).
-                    </td>
-                  </tr>
-                ) : (
-                  units.map((u: any) => (
-                    <tr
-                      key={u.id}
-                      className={selectedUnitId === u.id ? 'bg-indigo-50' : ''}
-                    >
-                      <td className="px-4 py-2 text-sm font-medium text-gray-900">{u.unitNumber}</td>
-                      <td className="px-4 py-2 text-sm text-gray-600">{u.floor}</td>
-                      <td className="px-4 py-2 text-right">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedUnitId(selectedUnitId === u.id ? null : u.id);
-                            setSelectedRoomId(null);
-                          }}
-                          className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
-                        >
-                          {selectedUnitId === u.id ? 'Hide rooms' : 'Show rooms'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        {selectedUnitId && (
+        {viewStep === 'units' && (
           <section>
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-800">Rooms in this unit</h3>
+              <h3 className="text-lg font-semibold text-gray-800">Units</h3>
+              <button
+                type="button"
+                onClick={() => setUnitModal(true)}
+                className="px-3 py-1.5 bg-black text-yellow-400 rounded-lg hover:bg-gray-800 text-sm font-medium"
+              >
+                + Add Unit
+              </button>
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Unit number</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Floor</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {units.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="px-4 py-6 text-center text-gray-500 text-sm">
+                        No units. Add a unit (e.g. A100, B100).
+                      </td>
+                    </tr>
+                  ) : (
+                    units.map((u: any) => (
+                      <tr key={u.id}>
+                        <td className="px-4 py-2 text-sm font-medium text-gray-900">{u.unitNumber}</td>
+                        <td className="px-4 py-2 text-sm text-gray-600">{u.floor}</td>
+                        <td className="px-4 py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedUnitId(u.id);
+                              setSelectedRoomId(null);
+                              setViewStep('rooms');
+                            }}
+                            className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+                          >
+                            Show rooms
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {viewStep === 'rooms' && selectedUnitId && (
+          <section>
+            <div className="flex items-center gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => { setViewStep('units'); setSelectedUnitId(null); setSelectedRoomId(null); }}
+                className="text-gray-600 hover:text-gray-900 text-sm font-medium"
+              >
+                ← Back to units
+              </button>
+              <span className="text-gray-400">|</span>
+              <span className="text-sm text-gray-700">
+                {building.name} → Unit {units.find((u: any) => u.id === selectedUnitId)?.unitNumber ?? selectedUnitId}
+              </span>
+            </div>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-800">Rooms</h3>
               <button
                 type="button"
                 onClick={() => setRoomModal(true)}
@@ -360,7 +393,6 @@ export default function BuildingDetailPage() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Room</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Floor</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Beds</th>
                     <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
@@ -368,7 +400,7 @@ export default function BuildingDetailPage() {
                 <tbody className="divide-y divide-gray-200">
                   {rooms.filter((r: any) => r.unitId === selectedUnitId).length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-4 py-6 text-center text-gray-500 text-sm">
+                      <td colSpan={3} className="px-4 py-6 text-center text-gray-500 text-sm">
                         No rooms in this unit. Add a room.
                       </td>
                     </tr>
@@ -376,13 +408,9 @@ export default function BuildingDetailPage() {
                     rooms
                       .filter((r: any) => r.unitId === selectedUnitId)
                       .map((r: any) => (
-                        <tr
-                          key={r.id}
-                          className={selectedRoomId === r.id ? 'bg-indigo-50' : ''}
-                        >
+                        <tr key={r.id}>
                           <td className="px-4 py-2 text-sm font-medium text-gray-900">{r.roomNumber}</td>
-                          <td className="px-4 py-2 text-sm text-gray-600">{r.floor}</td>
-                          <td className="px-4 py-2 text-sm text-gray-600">{r.totalBeds}</td>
+                          <td className="px-4 py-2 text-sm text-gray-600">{r.bedCount ?? 0}</td>
                           <td className="px-4 py-2 text-right space-x-2">
                             <button
                               type="button"
@@ -394,11 +422,12 @@ export default function BuildingDetailPage() {
                             <button
                               type="button"
                               onClick={() => {
-                                setSelectedRoomId(selectedRoomId === r.id ? null : r.id);
+                                setSelectedRoomId(r.id);
+                                setViewStep('beds');
                               }}
                               className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
                             >
-                              {selectedRoomId === r.id ? 'Hide beds' : 'Manage beds'}
+                              Manage beds
                             </button>
                           </td>
                         </tr>
@@ -410,10 +439,23 @@ export default function BuildingDetailPage() {
           </section>
         )}
 
-        {selectedRoomId && (
+        {viewStep === 'beds' && selectedRoomId && (
           <section>
+            <div className="flex items-center gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => { setViewStep('rooms'); setSelectedRoomId(null); }}
+                className="text-gray-600 hover:text-gray-900 text-sm font-medium"
+              >
+                ← Back to rooms
+              </button>
+              <span className="text-gray-400">|</span>
+              <span className="text-sm text-gray-700">
+                {building.name} → Unit {units.find((u: any) => u.id === selectedUnitId)?.unitNumber} → Room {rooms.find((r: any) => r.id === selectedRoomId)?.roomNumber}
+              </span>
+            </div>
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-800">Beds in this room (per-bed price → client price)</h3>
+              <h3 className="text-lg font-semibold text-gray-800">Beds</h3>
               <button
                 type="button"
                 onClick={() => setBedModal(true)}
@@ -427,18 +469,17 @@ export default function BuildingDetailPage() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Bed</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Base price</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Picture</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Assigned to</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Client price</th>
                     <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {beds.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-6 text-center text-gray-500 text-sm">
-                        No beds. Add beds and assign to residents (each can have a different price).
+                      <td colSpan={5} className="px-4 py-6 text-center text-gray-500 text-sm">
+                        No beds. Add beds and assign to residents.
                       </td>
                     </tr>
                   ) : (
@@ -458,10 +499,25 @@ export default function BuildingDetailPage() {
                         <td className="px-4 py-2 text-sm text-gray-600">
                           {b.assigneeName || b.resident?.name || '—'}
                         </td>
-                        <td className="px-4 py-2 text-sm text-gray-600">
-                          {b.assignmentPrice != null ? `$${b.assignmentPrice}` : '—'}
-                        </td>
                         <td className="px-4 py-2 text-right space-x-2">
+                          {(b.residentId || b.assigneeName) ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setViewAssigneeBed({
+                                  bedNumber: b.bedNumber,
+                                  assigneeName: b.assigneeName || b.resident?.name || '',
+                                  assigneeMobile: b.assigneeMobile ?? null,
+                                  assigneeNidFrontUrl: b.assigneeNidFrontUrl ?? null,
+                                  assigneeNidBackUrl: b.assigneeNidBackUrl ?? null,
+                                  assignedAt: b.assignedAt ?? null,
+                                })
+                              }
+                              className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+                            >
+                              View
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             onClick={() => openEditBed(b)}
@@ -469,7 +525,7 @@ export default function BuildingDetailPage() {
                           >
                             Edit
                           </button>
-                          {b.residentId ? (
+                          {(b.residentId || b.assigneeName) ? (
                             <button
                               type="button"
                               onClick={() => handleUnassign(b.id)}
@@ -550,26 +606,6 @@ export default function BuildingDetailPage() {
                     required
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-900">Floor</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={roomFloor}
-                    onChange={(e) => setRoomFloor(Number(e.target.value))}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-900">Number of beds in this room</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={roomTotalBeds}
-                    onChange={(e) => setRoomTotalBeds(Number(e.target.value))}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
-                  />
-                </div>
                 <div className="flex gap-2 justify-end">
                   <button type="button" onClick={() => setRoomModal(false)} className="px-4 py-2 text-gray-600">
                     Cancel
@@ -587,7 +623,6 @@ export default function BuildingDetailPage() {
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-xl">
               <h4 className="text-lg font-semibold mb-4 text-gray-900">Add Bed to this room</h4>
-              <p className="text-sm text-gray-500 mb-3">Price is set when you assign the bed to a resident.</p>
               <form onSubmit={handleAddBed} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-900">Bed number (unique in this room)</label>
@@ -606,7 +641,7 @@ export default function BuildingDetailPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-900">Base price ($) — optional, can set when assigning</label>
+                  <label className="block text-sm font-medium text-gray-900">Price</label>
                   <input
                     type="number"
                     min={0}
@@ -617,7 +652,7 @@ export default function BuildingDetailPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-900">Picture</label>
+                  <label className="block text-sm font-medium text-gray-900">Picture (optional)</label>
                   <input
                     type="file"
                     accept="image/*"
@@ -663,7 +698,7 @@ export default function BuildingDetailPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-900">Base price ($)</label>
+                  <label className="block text-sm font-medium text-gray-900">Price</label>
                   <input
                     type="number"
                     min={0}
@@ -721,19 +756,6 @@ export default function BuildingDetailPage() {
                     placeholder="Assignee name"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-900">Client price ($)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={editAssignmentPrice}
-                    onChange={(e) => setEditAssignmentPrice(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
-                    placeholder="Client price"
-                  />
-                </div>
-
                 <div className="flex gap-2 justify-end pt-2">
                   <button type="button" onClick={() => { setEditBedModal(null); setEditBedPictureFile(null); }} className="px-4 py-2 text-gray-600">
                     Cancel
@@ -763,16 +785,6 @@ export default function BuildingDetailPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-900">Floor</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={editRoomFloor}
-                    onChange={(e) => setEditRoomFloor(Number(e.target.value))}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
-                  />
-                </div>
-                <div>
                   <label className="block text-sm font-medium text-gray-900">Number of beds</label>
                   <input
                     type="number"
@@ -797,7 +809,7 @@ export default function BuildingDetailPage() {
 
         {assignModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-xl">
+            <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-xl max-h-[90vh] overflow-y-auto">
               <h4 className="text-lg font-semibold mb-2 text-gray-900">Assign bed {assignModal.bedNumber}</h4>
               <form onSubmit={handleAssignBed} className="space-y-4">
                 <div>
@@ -812,26 +824,103 @@ export default function BuildingDetailPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-900">Price ($)</label>
+                  <label className="block text-sm font-medium text-gray-900">Mobile number</label>
                   <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={assignPrice}
-                    onChange={(e) => setAssignPrice(e.target.value)}
+                    type="text"
+                    value={assignMobile}
+                    onChange={(e) => setAssignMobile(e.target.value)}
                     className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
-                    required
+                    placeholder="e.g. 01XXXXXXXXX"
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">NID picture (front) — required</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setAssignNidFront(e.target.files?.[0] || null)}
+                    className="mt-1 block w-full text-sm text-gray-900 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                    required
+                  />
+                  {assignNidFront && <p className="mt-1 text-xs text-gray-600">Selected: {assignNidFront.name}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">NID picture (back) — required</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setAssignNidBack(e.target.files?.[0] || null)}
+                    className="mt-1 block w-full text-sm text-gray-900 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                    required
+                  />
+                  {assignNidBack && <p className="mt-1 text-xs text-gray-600">Selected: {assignNidBack.name}</p>}
+                </div>
                 <div className="flex gap-2 justify-end">
-                  <button type="button" onClick={() => { setAssignModal(null); setAssigneeName(''); setAssignPrice(''); }} className="px-4 py-2 text-gray-600">
+                  <button
+                    type="button"
+                    onClick={() => { setAssignModal(null); setAssigneeName(''); setAssignMobile(''); setAssignNidFront(null); setAssignNidBack(null); }}
+                    className="px-4 py-2 text-gray-600"
+                  >
                     Cancel
                   </button>
-                  <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg">
-                    Assign
+                  <button type="submit" disabled={uploading} className="px-4 py-2 bg-indigo-600 text-white rounded-lg disabled:opacity-50">
+                    {uploading ? 'Uploading...' : 'Assign'}
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {viewAssigneeBed && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-xl max-h-[90vh] overflow-y-auto">
+              <h4 className="text-lg font-semibold mb-4 text-gray-900">Assignee details — Bed {viewAssigneeBed.bedNumber}</h4>
+              <dl className="space-y-3 text-sm">
+                <div>
+                  <dt className="text-gray-500 font-medium">Name</dt>
+                  <dd className="text-gray-900 mt-0.5">{viewAssigneeBed.assigneeName || '—'}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500 font-medium">Mobile number</dt>
+                  <dd className="text-gray-900 mt-0.5">{viewAssigneeBed.assigneeMobile || '—'}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500 font-medium">Assigned at</dt>
+                  <dd className="text-gray-900 mt-0.5">
+                    {viewAssigneeBed.assignedAt ? new Date(viewAssigneeBed.assignedAt).toLocaleString() : '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500 font-medium mb-1">NID (front)</dt>
+                  <dd className="mt-0.5">
+                    {viewAssigneeBed.assigneeNidFrontUrl ? (
+                      <a href={viewAssigneeBed.assigneeNidFrontUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 underline">
+                        View image
+                      </a>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500 font-medium mb-1">NID (back)</dt>
+                  <dd className="mt-0.5">
+                    {viewAssigneeBed.assigneeNidBackUrl ? (
+                      <a href={viewAssigneeBed.assigneeNidBackUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 underline">
+                        View image
+                      </a>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </dd>
+                </div>
+              </dl>
+              <div className="mt-6 flex justify-end">
+                <button type="button" onClick={() => setViewAssigneeBed(null)} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         )}

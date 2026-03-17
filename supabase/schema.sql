@@ -71,8 +71,7 @@ create table if not exists public.rooms (
   amenities text[] not null default '{}',
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (hostel_id, room_number)
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists public.beds (
@@ -85,8 +84,7 @@ create table if not exists public.beds (
   is_occupied boolean not null default false,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (room_id, bed_number)
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists public.bed_assignments (
