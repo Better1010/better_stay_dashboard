@@ -40,3 +40,25 @@ export async function uploadBedPicture(file: File, bedId: string): Promise<strin
   const { data } = supabase.storage.from(BED_PICTURES_BUCKET).getPublicUrl(filePath);
   return data.publicUrl;
 }
+
+const NID_PICTURES_BUCKET = 'nid-pictures';
+
+export async function uploadNidPicture(file: File, prefix: string): Promise<string> {
+  const session = await supabase.auth.getSession();
+  if (!session.data.session) {
+    throw new Error('You must be logged in to upload images. Please log in again.');
+  }
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+  const filePath = `${prefix}/${Date.now()}.${ext}`;
+  const { error } = await supabase.storage
+    .from(NID_PICTURES_BUCKET)
+    .upload(filePath, file, { upsert: true, contentType: file.type });
+  if (error) {
+    if (error.message?.includes('Bucket not found')) {
+      throw new Error('Storage bucket "nid-pictures" not found. Create it in Supabase Dashboard → Storage.');
+    }
+    throw new Error(error.message || 'Failed to upload NID image');
+  }
+  const { data } = supabase.storage.from(NID_PICTURES_BUCKET).getPublicUrl(filePath);
+  return data.publicUrl;
+}

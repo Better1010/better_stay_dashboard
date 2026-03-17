@@ -250,7 +250,7 @@ export default function AdminRoomsPage() {
         {selectedUnitId && (
           <section>
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-800">Rooms in this unit</h3>
+              <h3 className="text-lg font-semibold text-gray-800">Rooms</h3>
               <button
                 type="button"
                 onClick={() => setRoomModal(true)}
@@ -417,7 +417,6 @@ export default function AdminRoomsPage() {
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-xl">
               <h4 className="text-lg font-semibold mb-4">Add Bed to this room</h4>
-              <p className="text-sm text-gray-500 mb-3">Price is set when you assign the bed to a resident.</p>
               <form onSubmit={handleAddBed} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Bed number (unique in this room)</label>
