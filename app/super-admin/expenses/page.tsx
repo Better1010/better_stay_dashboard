@@ -1,7 +1,7 @@
 'use client';
 
 import DashboardLayout from '@/components/DashboardLayout';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import api from '@/lib/api';
 
 type Category = { id: string; name: string };
@@ -234,43 +234,73 @@ export default function SuperAdminExpensesPage() {
       (!filterUnitId || e.unitId === filterUnitId)
   );
 
+  const pieColors = ['#60aa70', '#ec7362', '#111827', '#6B7280', '#9CA3AF', '#F59E0B', '#6366F1', '#10B981'];
+
+  const expenseChartData = useMemo(() => {
+    const totalsByCategory = filteredExpenses.reduce<Record<string, number>>((acc, expense) => {
+      const key = expense.categoryName || 'Uncategorized';
+      acc[key] = (acc[key] ?? 0) + Number(expense.amount || 0);
+      return acc;
+    }, {});
+
+    return Object.entries(totalsByCategory)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [filteredExpenses]);
+
+  const totalChartAmount = expenseChartData.reduce((sum, item) => sum + item.value, 0);
+
+  const getPiePath = (startAngle: number, endAngle: number, radius = 80, cx = 100, cy = 100) => {
+    const startRadians = ((startAngle - 90) * Math.PI) / 180;
+    const endRadians = ((endAngle - 90) * Math.PI) / 180;
+    const x1 = cx + radius * Math.cos(startRadians);
+    const y1 = cy + radius * Math.sin(startRadians);
+    const x2 = cx + radius * Math.cos(endRadians);
+    const y2 = cy + radius * Math.sin(endRadians);
+    const largeArcFlag = endAngle - startAngle > 180 ? 1 : 0;
+    return `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2} Z`;
+  };
+
   return (
     <DashboardLayout requiredRole={['super_admin']}>
-      <div>
+      <div className="mx-auto w-full max-w-7xl px-1 sm:px-2">
         {toast && (
           <div
             role="alert"
-            className={`fixed top-4 right-4 z-60 px-4 py-3 rounded-lg text-white text-sm font-medium shadow-lg ${
-              toast.type === 'error' ? 'bg-red-600' : 'bg-gray-900'
+            className={`fixed right-4 top-4 z-60 rounded-lg px-4 py-3 text-sm font-medium text-white shadow-lg ${
+              toast.type === 'error' ? 'bg-secondary' : 'bg-primary'
             }`}
           >
             {toast.message}
           </div>
         )}
-        <h2 className="text-3xl font-bold text-gray-900 mb-6">Expense</h2>
+        <div className="mb-6 rounded-2xl border border-gray-200 bg-gradient-to-r from-primary/10 via-white to-secondary/10 p-5 sm:p-6">
+          <h2 className="text-2xl font-bold text-gray-900 sm:text-3xl">Expense</h2>
+          <p className="mt-1 text-sm text-gray-600">Track, manage, and review expense activities by building and unit.</p>
+        </div>
 
         {/* Add Expense Category */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="mb-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Expense Category</h3>
           <form onSubmit={handleAddCategory} className="flex gap-3 flex-wrap items-end">
-            <div className="min-w-[200px]">
+            <div className="min-w-[220px] flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">Category name</label>
               <input
                 type="text"
                 value={categoryName}
                 onChange={(e) => setCategoryName(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                 placeholder="e.g. Maintenance, Utilities"
               />
             </div>
-            <button type="submit" className="px-4 py-2 bg-black text-yellow-400 rounded-lg hover:bg-gray-900 font-medium">
+            <button type="submit" className="rounded-lg bg-primary px-4 py-2.5 font-medium text-white transition hover:bg-primary/90">
               Add Category
             </button>
           </form>
         </div>
 
         {/* Add Expense */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="mb-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Expense</h3>
           <form onSubmit={handleAddExpense} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
@@ -278,7 +308,7 @@ export default function SuperAdminExpensesPage() {
               <select
                 value={addBuildingId}
                 onChange={(e) => setAddBuildingId(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                 required
               >
                 <option value="">Select building first</option>
@@ -294,7 +324,7 @@ export default function SuperAdminExpensesPage() {
               <select
                 value={unitId}
                 onChange={(e) => setUnitId(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                 required
                 disabled={!addBuildingId}
               >
@@ -311,7 +341,7 @@ export default function SuperAdminExpensesPage() {
               <select
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                 required
               >
                 <option value="">Select category</option>
@@ -328,7 +358,7 @@ export default function SuperAdminExpensesPage() {
                 type="text"
                 value={expenseName}
                 onChange={(e) => setExpenseName(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                 placeholder="e.g. Plumbing repair"
                 required
               />
@@ -341,7 +371,7 @@ export default function SuperAdminExpensesPage() {
                 min="0"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                 required
               />
             </div>
@@ -351,12 +381,12 @@ export default function SuperAdminExpensesPage() {
                 type="date"
                 value={expenseDate}
                 onChange={(e) => setExpenseDate(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                 required
               />
             </div>
-            <div className="flex items-end">
-              <button type="submit" className="px-4 py-2 bg-black text-yellow-400 rounded-lg hover:bg-gray-900 font-medium">
+            <div className="flex items-end md:col-span-2 lg:col-span-1">
+              <button type="submit" className="w-full rounded-lg bg-primary px-4 py-2.5 font-medium text-white transition hover:bg-primary/90 lg:w-auto">
                 Add Expense
               </button>
             </div>
@@ -364,16 +394,75 @@ export default function SuperAdminExpensesPage() {
         </div>
 
         {/* Expense list table */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="p-4 border-b border-gray-200 flex flex-wrap items-end gap-4">
-            <h3 className="text-lg font-semibold text-gray-900 mr-4">Expense list</h3>
+        <div className="mb-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Expense Category Breakdown</h3>
+          {loading ? (
+            <div className="text-sm text-gray-500">Loading chart...</div>
+          ) : expenseChartData.length === 0 || totalChartAmount <= 0 ? (
+            <div className="text-sm text-gray-500">No expense data available for chart.</div>
+          ) : (
+            <div className="grid grid-cols-1 items-center gap-6 lg:grid-cols-2">
+              <div className="flex justify-center">
+                <svg width="220" height="220" viewBox="0 0 200 200" aria-label="Expense category pie chart" className="max-w-full">
+                  {expenseChartData.map((item, idx) => {
+                    const previousValue = expenseChartData
+                      .slice(0, idx)
+                      .reduce((sum, current) => sum + current.value, 0);
+                    const startAngle = (previousValue / totalChartAmount) * 360;
+                    const endAngle = ((previousValue + item.value) / totalChartAmount) * 360;
+                    return (
+                      <path
+                        key={item.name}
+                        d={getPiePath(startAngle, endAngle)}
+                        fill={pieColors[idx % pieColors.length]}
+                        stroke="#FFFFFF"
+                        strokeWidth="1.5"
+                      />
+                    );
+                  })}
+                  <circle cx="100" cy="100" r="42" fill="#FFFFFF" />
+                  <text x="100" y="96" textAnchor="middle" className="fill-gray-500 text-[10px]">
+                    Total
+                  </text>
+                  <text x="100" y="112" textAnchor="middle" className="fill-primary text-[11px] font-semibold">
+                    ${totalChartAmount.toFixed(2)}
+                  </text>
+                </svg>
+              </div>
+              <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/70 p-3 sm:p-4">
+                {expenseChartData.map((item, idx) => {
+                  const percentage = totalChartAmount > 0 ? (item.value / totalChartAmount) * 100 : 0;
+                  return (
+                    <div key={item.name} className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="inline-block h-3 w-3 rounded-sm flex-shrink-0"
+                          style={{ backgroundColor: pieColors[idx % pieColors.length] }}
+                        />
+                        <span className="text-sm text-gray-700 truncate">{item.name}</span>
+                      </div>
+                      <div className="text-sm font-medium text-gray-900 whitespace-nowrap">
+                        ${item.value.toFixed(2)} ({percentage.toFixed(1)}%)
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Expense list table */}
+        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-end gap-4 border-b border-gray-200 p-4 sm:p-5">
+            <h3 className="mr-4 text-lg font-semibold text-gray-900">Expense list</h3>
             <div className="flex flex-wrap items-end gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Building</label>
                 <select
                   value={filterBuildingId}
                   onChange={(e) => setFilterBuildingId(e.target.value)}
-                  className="block rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 min-w-[140px]"
+                  className="block min-w-[140px] rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                 >
                   <option value="">All buildings</option>
                   {buildings.map((b) => (
@@ -388,7 +477,7 @@ export default function SuperAdminExpensesPage() {
                 <select
                   value={filterUnitId}
                   onChange={(e) => setFilterUnitId(e.target.value)}
-                  className="block rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 min-w-[120px]"
+                  className="block min-w-[120px] rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                   disabled={!filterBuildingId}
                 >
                   <option value="">All units</option>
@@ -403,7 +492,7 @@ export default function SuperAdminExpensesPage() {
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+              <thead className="bg-gray-50/80">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Building</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Unit</th>
@@ -442,18 +531,18 @@ export default function SuperAdminExpensesPage() {
                         ${Number(e.amount).toFixed(2)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{formatDate(e.expenseDate)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
+                      <td className="space-x-3 whitespace-nowrap px-6 py-4 text-right text-sm font-medium">
                         <button
                           type="button"
                           onClick={() => openEditExpense(e)}
-                          className="text-indigo-600 hover:text-indigo-900"
+                          className="text-primary hover:text-primary/80"
                         >
                           Edit
                         </button>
                         <button
                           type="button"
                           onClick={() => setDeleteConfirm(e)}
-                          className="text-red-600 hover:text-red-800"
+                          className="text-secondary hover:text-secondary/80"
                         >
                           Delete
                         </button>
@@ -468,7 +557,7 @@ export default function SuperAdminExpensesPage() {
         {/* Edit Expense Modal */}
         {editExpense && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-xl">
+            <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
               <h4 className="text-lg font-semibold mb-4 text-gray-900">Edit Expense</h4>
               <form onSubmit={handleEditExpense} className="space-y-4">
                 <div>
@@ -483,7 +572,7 @@ export default function SuperAdminExpensesPage() {
                       } else setEditUnits([]);
                       setEditUnitId('');
                     }}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                     required
                   >
                     <option value="">Select building</option>
@@ -499,7 +588,7 @@ export default function SuperAdminExpensesPage() {
                   <select
                     value={editUnitId}
                     onChange={(ev) => setEditUnitId(ev.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                     required
                     disabled={!editBuildingId}
                   >
@@ -517,7 +606,7 @@ export default function SuperAdminExpensesPage() {
                     type="text"
                     value={editExpenseName}
                     onChange={(ev) => setEditExpenseName(ev.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                     required
                   />
                 </div>
@@ -526,7 +615,7 @@ export default function SuperAdminExpensesPage() {
                   <select
                     value={editCategoryId}
                     onChange={(ev) => setEditCategoryId(ev.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                     required
                   >
                     <option value="">Select category</option>
@@ -545,7 +634,7 @@ export default function SuperAdminExpensesPage() {
                     min="0"
                     value={editAmount}
                     onChange={(ev) => setEditAmount(ev.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                     required
                   />
                 </div>
@@ -555,13 +644,13 @@ export default function SuperAdminExpensesPage() {
                     type="date"
                     value={editExpenseDate}
                     onChange={(ev) => setEditExpenseDate(ev.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                     required
                   />
                 </div>
                 <div className="flex gap-2 justify-end">
                   <button type="button" onClick={() => setEditExpense(null)} className="px-4 py-2 text-gray-600">Cancel</button>
-                  <button type="submit" className="px-4 py-2 bg-black text-yellow-400 rounded-lg">Save</button>
+                  <button type="submit" className="rounded-lg bg-primary px-4 py-2 text-white hover:bg-primary/90">Save</button>
                 </div>
               </form>
             </div>
@@ -571,7 +660,7 @@ export default function SuperAdminExpensesPage() {
         {/* Delete Expense Confirmation Modal */}
         {deleteConfirm && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-xl">
+            <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
               <h4 className="text-lg font-semibold mb-2 text-gray-900">Delete Expense</h4>
               <p className="text-sm text-gray-600 mb-6">
                 Are you sure you want to delete expense <strong>&quot;{deleteConfirm.expenseName}&quot;</strong>?
@@ -589,7 +678,7 @@ export default function SuperAdminExpensesPage() {
                   type="button"
                   onClick={handleDeleteExpense}
                   disabled={deleting}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                  className="rounded-lg bg-secondary px-4 py-2 text-white hover:bg-secondary/90 disabled:opacity-50"
                 >
                   {deleting ? 'Deleting...' : 'Delete'}
                 </button>
