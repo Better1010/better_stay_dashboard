@@ -38,7 +38,7 @@ export default function SuperAdminReportsPage() {
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Total Revenue (Period)</h3>
-            <p className="text-3xl font-bold text-gray-900">$0</p>
+            <p className="text-3xl font-bold text-gray-900">৳0</p>
             <p className="text-sm text-gray-500 mt-1">Revenue and occupancy reports will appear here.</p>
           </div>
         </div>

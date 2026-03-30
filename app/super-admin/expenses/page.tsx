@@ -303,7 +303,7 @@ export default function SuperAdminExpensesPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch sm:justify-end">
             <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
               <p className="text-xs text-gray-500">Total expense</p>
-              <p className="text-2xl font-bold text-gray-900">${totalExpense.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-gray-900">৳{totalExpense.toFixed(2)}</p>
             </div>
             <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex gap-3 items-end">
               <div>
@@ -484,7 +484,7 @@ export default function SuperAdminExpensesPage() {
                     Total
                   </text>
                   <text x="100" y="112" textAnchor="middle" className="fill-primary text-[11px] font-semibold">
-                    ${totalChartAmount.toFixed(2)}
+                    ৳{totalChartAmount.toFixed(2)}
                   </text>
                 </svg>
               </div>
@@ -501,7 +501,7 @@ export default function SuperAdminExpensesPage() {
                         <span className="text-sm text-gray-700 truncate">{item.name}</span>
                       </div>
                       <div className="text-sm font-medium text-gray-900 whitespace-nowrap">
-                        ${item.value.toFixed(2)} ({percentage.toFixed(1)}%)
+                        ৳{item.value.toFixed(2)} ({percentage.toFixed(1)}%)
                       </div>
                     </div>
                   );
@@ -587,7 +587,7 @@ export default function SuperAdminExpensesPage() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{e.expenseName}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{e.categoryName}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
-                        ${Number(e.amount).toFixed(2)}
+                        ৳{Number(e.amount).toFixed(2)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{formatDate(e.expenseDate)}</td>
                       <td className="space-x-3 whitespace-nowrap px-6 py-4 text-right text-sm font-medium">

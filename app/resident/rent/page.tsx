@@ -15,7 +15,7 @@ export default function ResidentRentPage() {
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-gray-600">Amount due</span>
-                <span className="font-semibold text-gray-900">$—</span>
+                <span className="font-semibold text-gray-900">৳—</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Status</span>
@@ -38,11 +38,11 @@ export default function ResidentRentPage() {
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-gray-600">Paid this month</span>
-                <span className="font-semibold text-green-600">$0</span>
+                <span className="font-semibold text-green-600">৳0</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Pending</span>
-                <span className="font-semibold text-gray-900">$0</span>
+                <span className="font-semibold text-gray-900">৳0</span>
               </div>
             </div>
           </div>

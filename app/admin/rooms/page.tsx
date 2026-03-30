@@ -333,7 +333,7 @@ export default function AdminRoomsPage() {
                     beds.map((b: any) => (
                       <tr key={b.id}>
                         <td className="px-4 py-2 text-sm font-medium text-gray-900">{b.bedNumber}</td>
-                        <td className="px-4 py-2 text-sm text-gray-600">${b.basePrice}</td>
+                        <td className="px-4 py-2 text-sm text-gray-600">৳{b.basePrice}</td>
                         <td className="px-4 py-2 text-sm text-gray-600">{b.assigneeName || b.resident?.name || '—'}</td>
                         <td className="px-4 py-2 text-right">
                           {b.residentId ? (
