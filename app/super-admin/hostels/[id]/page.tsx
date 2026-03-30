@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
-import { uploadBedPicture, uploadNidPicture } from '@/lib/supabase';
+import { uploadBedPicture } from '@/lib/supabase';
 
 export default function BuildingDetailPage() {
   const params = useParams();
@@ -15,7 +15,7 @@ export default function BuildingDetailPage() {
   const [units, setUnits] = useState<any[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
   const [beds, setBeds] = useState<any[]>([]);
-  const [residents, setResidents] = useState<any[]>([]);
+  const [registeredUsers, setRegisteredUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
@@ -44,10 +44,7 @@ export default function BuildingDetailPage() {
   const [bedNumber, setBedNumber] = useState('');
   const [bedBasePrice, setBedBasePrice] = useState(0);
   const [bedPictureFile, setBedPictureFile] = useState<File | null>(null);
-  const [assigneeName, setAssigneeName] = useState('');
-  const [assignMobile, setAssignMobile] = useState('');
-  const [assignNidFront, setAssignNidFront] = useState<File | null>(null);
-  const [assignNidBack, setAssignNidBack] = useState<File | null>(null);
+  const [selectedRegisteredUserId, setSelectedRegisteredUserId] = useState('');
   const [editBedModal, setEditBedModal] = useState<{ id: string; bedNumber: string; basePrice: number; pictureUrl: string; assigneeName: string } | null>(null);
   const [editBedNumber, setEditBedNumber] = useState('');
   const [editBedBasePrice, setEditBedBasePrice] = useState(0);
@@ -61,12 +58,12 @@ export default function BuildingDetailPage() {
     Promise.all([
       api.get('/hostels').then((r) => (r.data.hostels || []).find((h: any) => (h.id || h._id) === buildingId)),
       api.get(`/units?hostelId=${buildingId}`).then((r) => r.data.units || []),
-      api.get('/users').then((r) => (r.data.users || []).filter((u: any) => u.role === 'resident')),
+      api.get('/registered-users').then((r) => r.data.users || []),
     ])
-      .then(([b, u, res]) => {
+      .then(([b, u, registered]) => {
         setBuilding(b || null);
         setUnits(u);
-        setResidents(res);
+        setRegisteredUsers(registered);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -206,30 +203,18 @@ export default function BuildingDetailPage() {
 
   const handleAssignBed = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!assignModal || !assigneeName.trim()) return;
-    if (!assignNidFront || !assignNidBack) {
-      alert('NID front and back pictures are required.');
+    if (!assignModal || !selectedRegisteredUserId) {
+      alert('Please select a registered user.');
       return;
     }
     try {
       setUploading(true);
-      const prefix = `bed-${assignModal.bedId}`;
-      const [nidFrontUrl, nidBackUrl] = await Promise.all([
-        uploadNidPicture(assignNidFront, prefix),
-        uploadNidPicture(assignNidBack, prefix),
-      ]);
       await api.post(`/beds/${assignModal.bedId}/assign`, {
-        assigneeName: assigneeName.trim(),
-        mobileNumber: assignMobile.trim() || undefined,
-        nidFrontUrl,
-        nidBackUrl,
+        registeredUserId: selectedRegisteredUserId,
         price: 0,
       });
       setAssignModal(null);
-      setAssigneeName('');
-      setAssignMobile('');
-      setAssignNidFront(null);
-      setAssignNidBack(null);
+      setSelectedRegisteredUserId('');
       refreshBeds();
     } catch (err: any) {
       alert(err.response?.data?.message || 'Failed to assign bed');
@@ -813,52 +798,30 @@ export default function BuildingDetailPage() {
               <h4 className="text-lg font-semibold mb-2 text-gray-900">Assign bed {assignModal.bedNumber}</h4>
               <form onSubmit={handleAssignBed} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-900">Assignee name</label>
-                  <input
-                    type="text"
-                    value={assigneeName}
-                    onChange={(e) => setAssigneeName(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
-                    placeholder="Enter assignee name"
+                  <label className="block text-sm font-medium text-gray-900">Select registered user</label>
+                  <select
+                    value={selectedRegisteredUserId}
+                    onChange={(e) => setSelectedRegisteredUserId(e.target.value)}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
                     required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-900">Mobile number</label>
-                  <input
-                    type="text"
-                    value={assignMobile}
-                    onChange={(e) => setAssignMobile(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
-                    placeholder="e.g. 01XXXXXXXXX"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-900">NID picture (front) — required</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setAssignNidFront(e.target.files?.[0] || null)}
-                    className="mt-1 block w-full text-sm text-gray-900 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
-                    required
-                  />
-                  {assignNidFront && <p className="mt-1 text-xs text-gray-600">Selected: {assignNidFront.name}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-900">NID picture (back) — required</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setAssignNidBack(e.target.files?.[0] || null)}
-                    className="mt-1 block w-full text-sm text-gray-900 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
-                    required
-                  />
-                  {assignNidBack && <p className="mt-1 text-xs text-gray-600">Selected: {assignNidBack.name}</p>}
+                  >
+                    <option value="">Select user</option>
+                    {registeredUsers.map((u: any) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} {u.mobileNumber ? `(${u.mobileNumber})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {registeredUsers.length === 0 && (
+                    <p className="mt-1 text-xs text-red-600">
+                      No registered users found. Add users from Register User page first.
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-2 justify-end">
                   <button
                     type="button"
-                    onClick={() => { setAssignModal(null); setAssigneeName(''); setAssignMobile(''); setAssignNidFront(null); setAssignNidBack(null); }}
+                    onClick={() => { setAssignModal(null); setSelectedRegisteredUserId(''); }}
                     className="px-4 py-2 text-gray-600"
                   >
                     Cancel

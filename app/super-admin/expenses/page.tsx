@@ -39,6 +39,10 @@ export default function SuperAdminExpensesPage() {
   const [unitsForFilter, setUnitsForFilter] = useState<Unit[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
+  const now = new Date();
+  const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
+  const [filterYear, setFilterYear] = useState(now.getFullYear());
+  const [totalExpense, setTotalExpense] = useState(0);
 
   const [categoryName, setCategoryName] = useState('');
   const [addBuildingId, setAddBuildingId] = useState('');
@@ -63,6 +67,22 @@ export default function SuperAdminExpensesPage() {
 
   const [deleteConfirm, setDeleteConfirm] = useState<Expense | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const months = [
+    { value: 1, label: 'January' },
+    { value: 2, label: 'February' },
+    { value: 3, label: 'March' },
+    { value: 4, label: 'April' },
+    { value: 5, label: 'May' },
+    { value: 6, label: 'June' },
+    { value: 7, label: 'July' },
+    { value: 8, label: 'August' },
+    { value: 9, label: 'September' },
+    { value: 10, label: 'October' },
+    { value: 11, label: 'November' },
+    { value: 12, label: 'December' },
+  ];
+  const years = Array.from({ length: 8 }, (_, i) => now.getFullYear() - 3 + i);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -124,17 +144,19 @@ export default function SuperAdminExpensesPage() {
     Promise.all([
       api.get('/expense-categories'),
       api.get('/hostels'),
-      api.get('/expenses'),
+      api.get(`/expenses?month=${filterMonth}&year=${filterYear}`),
     ])
       .then(([catRes, hostelsRes, expRes]) => {
         setCategories(catRes.data.categories || []);
         setBuildings(hostelsRes.data?.hostels?.map((h: { id?: string; _id?: string; name: string }) => ({ id: h.id || h._id || '', name: h.name })) || []);
         setExpenses(expRes.data.expenses || []);
+        setTotalExpense((expRes.data.expenses || []).reduce((sum: number, e: Expense) => sum + Number(e.amount || 0), 0));
       })
       .catch(() => {
         setCategories([]);
         setBuildings([]);
         setExpenses([]);
+        setTotalExpense(0);
       })
       .finally(() => setLoading(false));
   };
@@ -144,26 +166,28 @@ export default function SuperAdminExpensesPage() {
     Promise.all([
       api.get('/expense-categories'),
       api.get('/hostels'),
-      api.get('/expenses'),
+      api.get(`/expenses?month=${filterMonth}&year=${filterYear}`),
     ])
       .then(([catRes, hostelsRes, expRes]) => {
         if (cancelled) return;
         setCategories(catRes.data.categories || []);
         setBuildings(hostelsRes.data?.hostels?.map((h: { id?: string; _id?: string; name: string }) => ({ id: h.id || h._id || '', name: h.name })) || []);
         setExpenses(expRes.data.expenses || []);
+        setTotalExpense((expRes.data.expenses || []).reduce((sum: number, e: Expense) => sum + Number(e.amount || 0), 0));
       })
       .catch(() => {
         if (!cancelled) {
           setCategories([]);
           setBuildings([]);
           setExpenses([]);
+          setTotalExpense(0);
         }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [filterMonth, filterYear]);
 
   useEffect(() => {
     if (!addBuildingId) {
@@ -247,7 +271,45 @@ export default function SuperAdminExpensesPage() {
             {toast.message}
           </div>
         )}
-        <h2 className="text-3xl font-bold text-gray-900 mb-6">Expense</h2>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-6">
+          <h2 className="text-3xl font-bold text-gray-900">Expense</h2>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch sm:justify-end">
+            <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+              <p className="text-xs text-gray-500">Total expense</p>
+              <p className="text-2xl font-bold text-gray-900">${totalExpense.toFixed(2)}</p>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex gap-3 items-end">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 uppercase mb-1">Month</label>
+                <select
+                  value={filterMonth}
+                  onChange={(e) => setFilterMonth(Number(e.target.value))}
+                  className="rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                >
+                  {months.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 uppercase mb-1">Year</label>
+                <select
+                  value={filterYear}
+                  onChange={(e) => setFilterYear(Number(e.target.value))}
+                  className="rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                >
+                  {years.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* Add Expense Category */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
