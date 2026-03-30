@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
+import { Button } from '@/components/ui/button';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -56,62 +57,63 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-primary/10 via-white to-secondary/10 px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-6xl items-center justify-center">
-        <div className="grid w-full max-w-5xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl lg:grid-cols-2">
-          <div className="hidden lg:flex flex-col justify-between bg-gradient-to-br from-primary/15 to-secondary/15 p-10">
-            <div className="max-w-xs">
-              <Image
-                src="/images/LOGO.png"
-                alt="BetterStay logo"
-                width={320}
-                height={80}
-                priority
-                className="h-auto w-full"
-              />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight text-gray-900">Welcome back</h1>
-              <p className="mt-3 text-sm text-gray-600">
-                Manage your BetterStay dashboard with a secure sign in.
+    <main className="min-h-screen bg-slate-50">
+      <div className="grid min-h-screen lg:grid-cols-[1.15fr_1fr]">
+        <section className="relative hidden overflow-hidden bg-gradient-to-br from-primary to-primary/85 lg:block">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.22),transparent_45%),radial-gradient(circle_at_80%_80%,rgba(236,115,98,0.20),transparent_40%)]" />
+          <div className="relative z-10 flex h-full flex-col justify-between p-10 xl:p-14">
+            <Image
+              src="/images/LOGO.png"
+              alt="BetterStay logo"
+              width={320}
+              height={80}
+              priority
+              className="h-auto w-[240px] rounded-xl bg-white/90 p-3 shadow-lg xl:w-[300px]"
+            />
+            <div className="max-w-lg text-white">
+              <p className="mb-4 inline-flex rounded-full bg-white/20 px-3 py-1 text-xs font-medium tracking-wide uppercase">
+                Property Management Platform
+              </p>
+              <h1 className="text-4xl font-bold leading-tight xl:text-5xl">
+                Manage operations with confidence.
+              </h1>
+              <p className="mt-4 text-sm leading-relaxed text-white/90 xl:text-base">
+                Streamline expenses, maintenance, and resident workflows in one secure dashboard designed for modern teams.
               </p>
             </div>
           </div>
+        </section>
 
-          <div className="w-full p-6 sm:p-8 md:p-10">
-            <div className="mx-auto w-full max-w-md">
-              <div className="mb-6 flex justify-center lg:hidden">
-                <Image
-                  src="/images/LOGO.png"
-                  alt="BetterStay logo"
-                  width={260}
-                  height={64}
-                  priority
-                  className="h-auto w-full max-w-[260px]"
-                />
-              </div>
-              <h2 className="text-center text-2xl font-bold text-gray-900 sm:text-3xl">
-                Sign in to BetterStay
-              </h2>
-              <p className="mt-2 text-center text-sm text-gray-600">
-                Use your email and password to sign in
-              </p>
+        <section className="flex items-center px-4 py-8 sm:px-6 lg:px-10 xl:px-14">
+          <div className="mx-auto w-full max-w-md">
+            <div className="mb-8 lg:hidden">
+              <Image
+                src="/images/LOGO.png"
+                alt="BetterStay logo"
+                width={280}
+                height={70}
+                priority
+                className="mx-auto h-auto w-full max-w-[260px]"
+              />
             </div>
 
-            <form
-              className="mx-auto mt-8 w-full max-w-md space-y-5"
-              onSubmit={handleSubmit}
-              noValidate
-            >
-              {error && (
-                <div className="rounded-lg border border-secondary/30 bg-secondary/10 px-4 py-3 text-sm text-secondary">
-                  {error}
-                </div>
-              )}
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Sign in</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  Welcome back. Enter your account details to continue.
+                </p>
+              </div>
 
-              <div className="space-y-4">
+              <form className="space-y-5" onSubmit={handleSubmit} noValidate>
+                {error && (
+                  <div className="rounded-lg border border-secondary/30 bg-secondary/10 px-4 py-3 text-sm text-secondary">
+                    {error}
+                  </div>
+                )}
+
                 <div>
-                  <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-gray-700">
+                  <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-slate-700">
                     Email address
                   </label>
                   <input
@@ -121,13 +123,14 @@ export default function LoginPage() {
                     autoComplete="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="block w-full rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/30"
-                    placeholder="you@example.com"
+                    className="block h-11 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/25"
+                    placeholder="you@company.com"
                     required
                   />
                 </div>
+
                 <div>
-                  <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-gray-700">
+                  <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-slate-700">
                     Password
                   </label>
                   <input
@@ -135,28 +138,26 @@ export default function LoginPage() {
                     name="password"
                     type="password"
                     autoComplete="current-password"
-                    required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="block w-full rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/30"
+                    className="block h-11 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/25"
                     placeholder="Enter your password"
+                    required
                   />
                 </div>
-              </div>
 
-              <div>
-                <button
+                <Button
                   type="submit"
                   disabled={loading}
-                  className="inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="h-11 w-full rounded-lg bg-primary text-sm font-semibold text-white hover:bg-primary/90"
                 >
-                  {loading ? 'Signing in...' : 'Sign in'}
-                </button>
-              </div>
-            </form>
+                  {loading ? 'Signing in...' : 'Sign in to dashboard'}
+                </Button>
+              </form>
+            </div>
           </div>
-        </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

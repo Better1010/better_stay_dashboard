@@ -3,6 +3,7 @@
 import DashboardLayout from '@/components/DashboardLayout';
 import { useEffect, useMemo, useState } from 'react';
 import api from '@/lib/api';
+import Image from 'next/image';
 
 type Category = { id: string; name: string };
 type Building = { id: string; name: string };
@@ -263,7 +264,7 @@ export default function SuperAdminExpensesPage() {
 
   return (
     <DashboardLayout requiredRole={['super_admin']}>
-      <div className="mx-auto w-full max-w-7xl px-1 sm:px-2">
+      <div className="mx-auto w-full max-w-7xl px-2 pb-8 sm:px-4">
         {toast && (
           <div
             role="alert"
@@ -274,17 +275,13 @@ export default function SuperAdminExpensesPage() {
             {toast.message}
           </div>
         )}
-        <div className="mb-6 rounded-2xl border border-gray-200 bg-gradient-to-r from-primary/10 via-white to-secondary/10 p-5 sm:p-6">
-          <h2 className="text-2xl font-bold text-gray-900 sm:text-3xl">Expense</h2>
-          <p className="mt-1 text-sm text-gray-600">Track, manage, and review expense activities by building and unit.</p>
-        </div>
 
         {/* Add Expense Category */}
-        <div className="mb-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Expense Category</h3>
+        <div className="mb-6 rounded-3xl border border-primary/20 bg-white p-5 shadow-sm sm:p-6">
+          <h3 className="mb-4 text-lg font-semibold text-gray-900">Add Expense Category</h3>
           <form onSubmit={handleAddCategory} className="flex gap-3 flex-wrap items-end">
             <div className="min-w-[220px] flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Category name</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Category name</label>
               <input
                 type="text"
                 value={categoryName}
@@ -293,18 +290,18 @@ export default function SuperAdminExpensesPage() {
                 placeholder="e.g. Maintenance, Utilities"
               />
             </div>
-            <button type="submit" className="rounded-lg bg-primary px-4 py-2.5 font-medium text-white transition hover:bg-primary/90">
+            <button type="submit" className="rounded-xl bg-primary px-5 py-2.5 font-medium text-white transition hover:bg-primary/90">
               Add Category
             </button>
           </form>
         </div>
 
         {/* Add Expense */}
-        <div className="mb-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Expense</h3>
+        <div className="mb-6 rounded-3xl border border-primary/20 bg-white p-5 shadow-sm sm:p-6">
+          <h3 className="mb-4 text-lg font-semibold text-gray-900">Add Expense</h3>
           <form onSubmit={handleAddExpense} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Building</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Building</label>
               <select
                 value={addBuildingId}
                 onChange={(e) => setAddBuildingId(e.target.value)}
@@ -320,7 +317,7 @@ export default function SuperAdminExpensesPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Unit</label>
               <select
                 value={unitId}
                 onChange={(e) => setUnitId(e.target.value)}
@@ -337,7 +334,7 @@ export default function SuperAdminExpensesPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Category</label>
               <select
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
@@ -353,7 +350,7 @@ export default function SuperAdminExpensesPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
               <input
                 type="text"
                 value={expenseName}
@@ -364,7 +361,7 @@ export default function SuperAdminExpensesPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Amount</label>
               <input
                 type="number"
                 step="0.01"
@@ -376,7 +373,7 @@ export default function SuperAdminExpensesPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Date</label>
               <input
                 type="date"
                 value={expenseDate}
@@ -386,7 +383,7 @@ export default function SuperAdminExpensesPage() {
               />
             </div>
             <div className="flex items-end md:col-span-2 lg:col-span-1">
-              <button type="submit" className="w-full rounded-lg bg-primary px-4 py-2.5 font-medium text-white transition hover:bg-primary/90 lg:w-auto">
+              <button type="submit" className="w-full rounded-xl bg-primary px-4 py-2.5 font-medium text-white transition hover:bg-primary/90 lg:w-auto">
                 Add Expense
               </button>
             </div>
@@ -394,8 +391,8 @@ export default function SuperAdminExpensesPage() {
         </div>
 
         {/* Expense list table */}
-        <div className="mb-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Expense Category Breakdown</h3>
+        <div className="mb-6 rounded-3xl border border-primary/20 bg-white p-5 shadow-sm sm:p-6">
+          <h3 className="mb-4 text-lg font-semibold text-gray-900">Expense Category Breakdown</h3>
           {loading ? (
             <div className="text-sm text-gray-500">Loading chart...</div>
           ) : expenseChartData.length === 0 || totalChartAmount <= 0 ? (
@@ -403,7 +400,7 @@ export default function SuperAdminExpensesPage() {
           ) : (
             <div className="grid grid-cols-1 items-center gap-6 lg:grid-cols-2">
               <div className="flex justify-center">
-                <svg width="220" height="220" viewBox="0 0 200 200" aria-label="Expense category pie chart" className="max-w-full">
+                <svg width="240" height="240" viewBox="0 0 200 200" aria-label="Expense category pie chart" className="max-w-full">
                   {expenseChartData.map((item, idx) => {
                     const previousValue = expenseChartData
                       .slice(0, idx)
@@ -429,7 +426,7 @@ export default function SuperAdminExpensesPage() {
                   </text>
                 </svg>
               </div>
-              <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/70 p-3 sm:p-4">
+              <div className="space-y-2 rounded-2xl border border-primary/10 bg-gradient-to-br from-primary/5 to-secondary/5 p-3 sm:p-4">
                 {expenseChartData.map((item, idx) => {
                   const percentage = totalChartAmount > 0 ? (item.value / totalChartAmount) * 100 : 0;
                   return (
@@ -453,12 +450,12 @@ export default function SuperAdminExpensesPage() {
         </div>
 
         {/* Expense list table */}
-        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-          <div className="flex flex-wrap items-end gap-4 border-b border-gray-200 p-4 sm:p-5">
+        <div className="overflow-hidden rounded-3xl border border-primary/20 bg-white shadow-sm">
+          <div className="flex flex-wrap items-end gap-4 border-b border-primary/10 bg-gradient-to-r from-primary/5 via-white to-secondary/5 p-4 sm:p-5">
             <h3 className="mr-4 text-lg font-semibold text-gray-900">Expense list</h3>
             <div className="flex flex-wrap items-end gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Building</label>
+                <label className="mb-1 block text-xs font-medium text-gray-500">Building</label>
                 <select
                   value={filterBuildingId}
                   onChange={(e) => setFilterBuildingId(e.target.value)}
@@ -473,7 +470,7 @@ export default function SuperAdminExpensesPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Unit</label>
+                <label className="mb-1 block text-xs font-medium text-gray-500">Unit</label>
                 <select
                   value={filterUnitId}
                   onChange={(e) => setFilterUnitId(e.target.value)}
@@ -520,7 +517,7 @@ export default function SuperAdminExpensesPage() {
                   </tr>
                 ) : (
                   filteredExpenses.map((e) => (
-                    <tr key={e.id}>
+                    <tr key={e.id} className="transition hover:bg-primary/5">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{e.hostelName}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                         {e.unitNumber} (Floor {e.unitFloor})
@@ -557,7 +554,7 @@ export default function SuperAdminExpensesPage() {
         {/* Edit Expense Modal */}
         {editExpense && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <div className="w-full max-w-md rounded-2xl border border-primary/20 bg-white p-6 shadow-xl">
               <h4 className="text-lg font-semibold mb-4 text-gray-900">Edit Expense</h4>
               <form onSubmit={handleEditExpense} className="space-y-4">
                 <div>
@@ -650,7 +647,7 @@ export default function SuperAdminExpensesPage() {
                 </div>
                 <div className="flex gap-2 justify-end">
                   <button type="button" onClick={() => setEditExpense(null)} className="px-4 py-2 text-gray-600">Cancel</button>
-                  <button type="submit" className="rounded-lg bg-primary px-4 py-2 text-white hover:bg-primary/90">Save</button>
+                  <button type="submit" className="rounded-xl bg-primary px-4 py-2 text-white hover:bg-primary/90">Save</button>
                 </div>
               </form>
             </div>
@@ -660,7 +657,7 @@ export default function SuperAdminExpensesPage() {
         {/* Delete Expense Confirmation Modal */}
         {deleteConfirm && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
+            <div className="w-full max-w-sm rounded-2xl border border-secondary/20 bg-white p-6 shadow-xl">
               <h4 className="text-lg font-semibold mb-2 text-gray-900">Delete Expense</h4>
               <p className="text-sm text-gray-600 mb-6">
                 Are you sure you want to delete expense <strong>&quot;{deleteConfirm.expenseName}&quot;</strong>?
