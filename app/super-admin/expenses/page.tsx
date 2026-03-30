@@ -3,7 +3,6 @@
 import DashboardLayout from '@/components/DashboardLayout';
 import { useEffect, useMemo, useState } from 'react';
 import api from '@/lib/api';
-import Image from 'next/image';
 
 type Category = { id: string; name: string };
 type Building = { id: string; name: string };
