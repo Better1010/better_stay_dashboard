@@ -1177,9 +1177,9 @@ const getIncome = async (queryParams?: {
   throwIfError(hostelsRes.error, 'Failed to load hostels');
   throwIfError(paidRes.error, 'Failed to load income payments');
 
-  const unitsById = new Map((unitsRes.data || []).map((u: any) => [u.id, u]));
-  const hostelsById = new Map((hostelsRes.data || []).map((h: any) => [h.id, h]));
-  const paidByBedId = new Map((paidRes.data || []).map((p: any) => [p.bed_id, p]));
+  const unitsById = new Map<string, any>((unitsRes.data || []).map((u: any) => [u.id, u]));
+  const hostelsById = new Map<string, any>((hostelsRes.data || []).map((h: any) => [h.id, h]));
+  const paidByBedId = new Map<string, any>((paidRes.data || []).map((p: any) => [p.bed_id, p]));
 
   const rows = filteredBeds
     .map((bed: any) => {
