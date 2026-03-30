@@ -171,7 +171,7 @@ export default function SuperAdminIncomePage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch sm:justify-end">
             <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
               <p className="text-xs text-gray-500">Total paid</p>
-              <p className="text-2xl font-bold text-gray-900">${totalIncome.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-gray-900">৳{totalIncome.toFixed(2)}</p>
             </div>
             <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex gap-3 items-end">
               <div>
@@ -286,7 +286,7 @@ export default function SuperAdminIncomePage() {
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">{row.bedNumber}</td>
                       <td className="px-4 py-3 text-sm text-gray-700">{row.assigneeName || '—'}</td>
                       <td className="px-4 py-3 text-sm text-gray-700">{row.mobileNumber || '—'}</td>
-                      <td className="px-4 py-3 text-sm text-right text-gray-700">${Number(row.basePrice || 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-700">৳{Number(row.basePrice || 0).toFixed(2)}</td>
                       <td className="px-4 py-3 text-sm">
                         {row.status === 'paid' ? (
                           <span className="px-2 py-1 rounded-full bg-green-100 text-green-700 text-xs font-semibold">Paid</span>

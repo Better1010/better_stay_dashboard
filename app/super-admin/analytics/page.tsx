@@ -23,7 +23,7 @@ export default function SuperAdminAnalyticsPage() {
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <p className="text-sm font-medium text-gray-500">Avg. Revenue / Hostel</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">$0</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">৳0</p>
           </div>
         </div>
 

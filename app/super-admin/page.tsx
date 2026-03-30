@@ -81,7 +81,7 @@ export default function SuperAdminDashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-600 text-sm font-medium">Total Revenue</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">${stats.totalRevenue}</p>
+                  <p className="text-3xl font-bold text-gray-900 mt-2">৳{stats.totalRevenue}</p>
                 </div>
                 <span className="text-4xl">💰</span>
               </div>

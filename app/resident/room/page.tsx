@@ -29,7 +29,7 @@ export default function ResidentRoomPage() {
               <div className="space-y-4">
                 <div>
                   <p className="text-sm font-medium text-gray-500">Monthly rent</p>
-                  <p className="text-lg font-semibold text-gray-900">$—</p>
+                  <p className="text-lg font-semibold text-gray-900">৳—</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-500">Hostel</p>

@@ -94,7 +94,7 @@ export default function ClientHistoryPage() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{formatDate(row.unassignedAt)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{row.monthsStayed}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">
-                        {row.totalPayment != null ? `$${Number(row.totalPayment).toFixed(2)}` : '—'}
+                        {row.totalPayment != null ? `৳${Number(row.totalPayment).toFixed(2)}` : '—'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                         <span className="flex gap-1">

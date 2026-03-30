@@ -54,7 +54,7 @@ export default function ResidentDashboard() {
                     <span className="font-semibold">Floor:</span> {roomInfo.floor}
                   </p>
                   <p className="text-gray-600 mt-2">
-                    <span className="font-semibold">Rent:</span> ${roomInfo.rent}/month
+                    <span className="font-semibold">Rent:</span> ৳{roomInfo.rent}/month
                   </p>
                   <Link
                     href="/resident/room"
@@ -73,7 +73,7 @@ export default function ResidentDashboard() {
               {rentStatus ? (
                 <div>
                   <p className="text-gray-600">
-                    <span className="font-semibold">Amount:</span> ${rentStatus.amount}
+                    <span className="font-semibold">Amount:</span> ৳{rentStatus.amount}
                   </p>
                   <p className="text-gray-600 mt-2">
                     <span className="font-semibold">Status:</span>{' '}
