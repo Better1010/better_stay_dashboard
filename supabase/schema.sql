@@ -87,10 +87,21 @@ create table if not exists public.beds (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.registered_users (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  mobile_number text null,
+  nid_picture_front_url text not null,
+  nid_picture_back_url text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.bed_assignments (
   id uuid primary key default gen_random_uuid(),
   bed_id uuid not null references public.beds(id) on delete cascade,
   resident_id uuid null references auth.users(id) on delete set null,
+  registered_user_id uuid null references public.registered_users(id) on delete set null,
   assignee_name text null,
   price numeric(12,2) not null,
   assigned_by uuid null references auth.users(id) on delete set null,
@@ -101,6 +112,7 @@ create table if not exists public.bed_assignments (
 );
 create index if not exists bed_assignments_bed_id_idx on public.bed_assignments(bed_id);
 create index if not exists bed_assignments_resident_id_idx on public.bed_assignments(resident_id);
+create index if not exists bed_assignments_registered_user_id_idx on public.bed_assignments(registered_user_id);
 
 create table if not exists public.complaints (
   id uuid primary key default gen_random_uuid(),
@@ -172,6 +184,22 @@ create index if not exists expenses_unit_id_idx on public.expenses(unit_id);
 create index if not exists expenses_category_id_idx on public.expenses(category_id);
 create index if not exists expenses_expense_date_idx on public.expenses(expense_date);
 
+create table if not exists public.income_payments (
+  id uuid primary key default gen_random_uuid(),
+  bed_id uuid not null references public.beds(id) on delete cascade,
+  assignment_id uuid null references public.bed_assignments(id) on delete set null,
+  month int not null check (month >= 1 and month <= 12),
+  year int not null check (year >= 2000),
+  amount numeric(12,2) not null default 0,
+  paid_at timestamptz not null default now(),
+  paid_by uuid null references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (bed_id, month, year)
+);
+create index if not exists income_payments_year_month_idx on public.income_payments(year, month);
+create index if not exists income_payments_bed_id_idx on public.income_payments(bed_id);
+
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -192,23 +220,29 @@ drop trigger if exists beds_set_updated_at on public.beds;
 create trigger beds_set_updated_at before update on public.beds for each row execute function public.set_updated_at();
 drop trigger if exists bed_assignments_set_updated_at on public.bed_assignments;
 create trigger bed_assignments_set_updated_at before update on public.bed_assignments for each row execute function public.set_updated_at();
+drop trigger if exists registered_users_set_updated_at on public.registered_users;
+create trigger registered_users_set_updated_at before update on public.registered_users for each row execute function public.set_updated_at();
 drop trigger if exists complaints_set_updated_at on public.complaints;
 create trigger complaints_set_updated_at before update on public.complaints for each row execute function public.set_updated_at();
 drop trigger if exists payments_set_updated_at on public.payments;
 create trigger payments_set_updated_at before update on public.payments for each row execute function public.set_updated_at();
 drop trigger if exists tasks_set_updated_at on public.tasks;
 create trigger tasks_set_updated_at before update on public.tasks for each row execute function public.set_updated_at();
+drop trigger if exists income_payments_set_updated_at on public.income_payments;
+create trigger income_payments_set_updated_at before update on public.income_payments for each row execute function public.set_updated_at();
 
 alter table public.hostels enable row level security;
 alter table public.units enable row level security;
 alter table public.rooms enable row level security;
 alter table public.bed_assignments enable row level security;
+alter table public.registered_users enable row level security;
 alter table public.complaints enable row level security;
 alter table public.payments enable row level security;
 alter table public.tasks enable row level security;
 alter table public.notices enable row level security;
 alter table public.expense_categories enable row level security;
 alter table public.expenses enable row level security;
+alter table public.income_payments enable row level security;
 
 drop policy if exists hostels_authenticated on public.hostels;
 create policy hostels_authenticated on public.hostels for all using (auth.role() = 'authenticated');
@@ -218,6 +252,8 @@ drop policy if exists units_authenticated on public.units;
 create policy units_authenticated on public.units for all using (auth.role() = 'authenticated');
 drop policy if exists bed_assignments_authenticated on public.bed_assignments;
 create policy bed_assignments_authenticated on public.bed_assignments for all using (auth.role() = 'authenticated');
+drop policy if exists registered_users_authenticated on public.registered_users;
+create policy registered_users_authenticated on public.registered_users for all using (auth.role() = 'authenticated');
 drop policy if exists complaints_authenticated on public.complaints;
 create policy complaints_authenticated on public.complaints for all using (auth.role() = 'authenticated');
 drop policy if exists payments_authenticated on public.payments;
@@ -230,3 +266,5 @@ drop policy if exists expense_categories_authenticated on public.expense_categor
 create policy expense_categories_authenticated on public.expense_categories for all using (auth.role() = 'authenticated');
 drop policy if exists expenses_authenticated on public.expenses;
 create policy expenses_authenticated on public.expenses for all using (auth.role() = 'authenticated');
+drop policy if exists income_payments_authenticated on public.income_payments;
+create policy income_payments_authenticated on public.income_payments for all using (auth.role() = 'authenticated');

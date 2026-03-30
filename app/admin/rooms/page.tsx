@@ -27,7 +27,6 @@ export default function AdminRoomsPage() {
   const [bedNumber, setBedNumber] = useState('');
   const [bedBasePrice, setBedBasePrice] = useState(0);
   const [assigneeName, setAssigneeName] = useState('');
-  const [assignPrice, setAssignPrice] = useState('');
 
   useEffect(() => {
     Promise.all([
@@ -148,12 +147,11 @@ export default function AdminRoomsPage() {
 
   const handleAssignBed = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!assignModal || !assigneeName.trim() || assignPrice === '') return;
+    if (!assignModal || !assigneeName.trim()) return;
     try {
-      await api.post(`/beds/${assignModal.bedId}/assign`, { assigneeName: assigneeName.trim(), price: Number(assignPrice) });
+      await api.post(`/beds/${assignModal.bedId}/assign`, { assigneeName: assigneeName.trim(), price: 0 });
       setAssignModal(null);
       setAssigneeName('');
-      setAssignPrice('');
       refreshBeds();
     } catch (err: any) {
       alert(err.response?.data?.message || 'Failed to assign bed');
@@ -305,7 +303,7 @@ export default function AdminRoomsPage() {
         {selectedRoomId && (
           <section>
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-800">Beds (base price → client price)</h3>
+              <h3 className="text-lg font-semibold text-gray-800">Beds</h3>
               <button
                 type="button"
                 onClick={() => setBedModal(true)}
@@ -319,17 +317,16 @@ export default function AdminRoomsPage() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Bed</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Base price</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Assigned to</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Client price</th>
                     <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {beds.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-6 text-center text-gray-500 text-sm">
-                        No beds. Add beds and assign to residents (each can have a different price).
+                      <td colSpan={4} className="px-4 py-6 text-center text-gray-500 text-sm">
+                        No beds. Add beds and assign to residents.
                       </td>
                     </tr>
                   ) : (
@@ -338,9 +335,6 @@ export default function AdminRoomsPage() {
                         <td className="px-4 py-2 text-sm font-medium text-gray-900">{b.bedNumber}</td>
                         <td className="px-4 py-2 text-sm text-gray-600">${b.basePrice}</td>
                         <td className="px-4 py-2 text-sm text-gray-600">{b.assigneeName || b.resident?.name || '—'}</td>
-                        <td className="px-4 py-2 text-sm text-gray-600">
-                          {b.assignmentPrice != null ? `$${b.assignmentPrice}` : '—'}
-                        </td>
                         <td className="px-4 py-2 text-right">
                           {b.residentId ? (
                             <button type="button" onClick={() => handleUnassign(b.id)} className="text-red-600 hover:text-red-800 text-sm font-medium">
@@ -426,7 +420,7 @@ export default function AdminRoomsPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Base price ($) — optional</label>
+                  <label className="block text-sm font-medium text-gray-700">Price</label>
                   <input type="number" min={0} step={0.01} value={bedBasePrice} onChange={(e) => setBedBasePrice(Number(e.target.value))} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2" />
                 </div>
                 <div className="flex gap-2 justify-end">
@@ -447,12 +441,8 @@ export default function AdminRoomsPage() {
                   <label className="block text-sm font-medium text-gray-700">Assignee name</label>
                   <input type="text" value={assigneeName} onChange={(e) => setAssigneeName(e.target.value)} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2" placeholder="Enter assignee name" required />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Price ($)</label>
-                  <input type="number" min={0} step={0.01} value={assignPrice} onChange={(e) => setAssignPrice(e.target.value)} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2" required />
-                </div>
                 <div className="flex gap-2 justify-end">
-                  <button type="button" onClick={() => { setAssignModal(null); setAssigneeName(''); setAssignPrice(''); }} className="px-4 py-2 text-gray-600">Cancel</button>
+                  <button type="button" onClick={() => { setAssignModal(null); setAssigneeName(''); }} className="px-4 py-2 text-gray-600">Cancel</button>
                   <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg">Assign</button>
                 </div>
               </form>
