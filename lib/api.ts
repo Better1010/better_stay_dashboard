@@ -1285,6 +1285,158 @@ const deleteIncomePayment = async (paymentId: string): Promise<ApiResponse> => {
   return { data: { success: true } };
 };
 
+const getAnalytics = async (queryParams?: {
+  hostelId?: string;
+  unitId?: string;
+  month?: number;
+  year?: number;
+  search?: string;
+}): Promise<ApiResponse> => {
+  requireAuthUser();
+  const now = new Date();
+  const month = queryParams?.month && queryParams.month >= 1 && queryParams.month <= 12 ? queryParams.month : now.getMonth() + 1;
+  const year = queryParams?.year && queryParams.year >= 2000 ? queryParams.year : now.getFullYear();
+  const hostelId = queryParams?.hostelId ? String(queryParams.hostelId) : undefined;
+  const unitId = queryParams?.unitId ? String(queryParams.unitId) : undefined;
+  const search = (queryParams?.search || '').trim().toLowerCase();
+
+  // 1) Income (paid) for month/year (source of truth: income_payments table)
+  const incomeRes = await supabase
+    .from('income_payments')
+    .select('id, bed_id, assignment_id, amount, paid_at')
+    .eq('month', month)
+    .eq('year', year);
+  throwIfError(incomeRes.error, 'Failed to load income payments');
+
+  const payments = incomeRes.data || [];
+  const bedIds = Array.from(new Set(payments.map((p: any) => p.bed_id).filter(Boolean)));
+  const assignmentIds = Array.from(new Set(payments.map((p: any) => p.assignment_id).filter(Boolean)));
+
+  const bedsRes =
+    bedIds.length > 0
+      ? await supabase.from('beds').select('id, bed_number, base_price, room_id').in('id', bedIds)
+      : Promise.resolve({ data: [], error: null } as any);
+  throwIfError(bedsRes.error, 'Failed to load beds');
+
+  const beds = bedsRes.data || [];
+  const roomIds = Array.from(new Set(beds.map((b: any) => b.room_id).filter(Boolean)));
+
+  const roomsRes =
+    roomIds.length > 0
+      ? await supabase.from('rooms').select('id, room_number, unit_id, hostel_id').in('id', roomIds)
+      : Promise.resolve({ data: [], error: null } as any);
+  throwIfError(roomsRes.error, 'Failed to load rooms');
+  const rooms = roomsRes.data || [];
+
+  const unitIds = Array.from(new Set(rooms.map((r: any) => r.unit_id).filter(Boolean)));
+  const hostelIds = Array.from(new Set(rooms.map((r: any) => r.hostel_id).filter(Boolean)));
+
+  const [unitsRes, hostelsRes, assignmentsRes] = await Promise.all([
+    unitIds.length > 0 ? supabase.from('units').select('id, unit_number').in('id', unitIds) : Promise.resolve({ data: [], error: null } as any),
+    hostelIds.length > 0 ? supabase.from('hostels').select('id, name').in('id', hostelIds) : Promise.resolve({ data: [], error: null } as any),
+    assignmentIds.length > 0
+      ? supabase.from('bed_assignments').select('id, assignee_name, mobile_number').in('id', assignmentIds)
+      : Promise.resolve({ data: [], error: null } as any),
+  ]);
+  throwIfError(unitsRes.error, 'Failed to load units');
+  throwIfError(hostelsRes.error, 'Failed to load hostels');
+  throwIfError(assignmentsRes.error, 'Failed to load assignments');
+
+  const unitsById = new Map<string, any>((unitsRes.data || []).map((u: any) => [u.id, u]));
+  const hostelsById = new Map<string, any>((hostelsRes.data || []).map((h: any) => [h.id, h]));
+  const bedsById = new Map<string, any>(beds.map((b: any) => [b.id, b]));
+  const roomsById = new Map<string, any>(rooms.map((r: any) => [r.id, r]));
+  const assignmentsById = new Map<string, any>((assignmentsRes.data || []).map((a: any) => [a.id, a]));
+
+  const incomeRows: any[] = [];
+  let totalIncome = 0;
+
+  for (const p of payments) {
+    const bed = bedsById.get(p.bed_id);
+    const room = bed ? roomsById.get(bed.room_id) : null;
+    if (!bed || !room) continue;
+    if (hostelId && room.hostel_id !== hostelId) continue;
+    if (unitId && room.unit_id !== unitId) continue;
+
+    const assignment = p.assignment_id ? assignmentsById.get(p.assignment_id) : null;
+    const assigneeName = assignment?.assignee_name || '—';
+    const mobileNumber = assignment?.mobile_number || '—';
+
+    if (search) {
+      const hay = `${bed.bed_number} ${assigneeName} ${mobileNumber}`.toLowerCase();
+      if (!hay.includes(search)) continue;
+    }
+
+    const buildingName = hostelsById.get(room.hostel_id)?.name || '';
+    const unitNumber = room.unit_id ? unitsById.get(room.unit_id)?.unit_number || '' : '';
+
+    incomeRows.push({
+      paymentId: p.id,
+      bedId: bed.id,
+      bedNumber: bed.bed_number,
+      roomNumber: room.room_number,
+      unitNumber,
+      buildingName,
+      assigneeName,
+      mobileNumber,
+      amount: Number(p.amount ?? 0),
+      paidAt: p.paid_at ?? null,
+    });
+    totalIncome += Number(p.amount ?? 0);
+  }
+
+  // 2) Expenses for month/year (source of truth: expenses table)
+  const start = `${year}-${String(month).padStart(2, '0')}-01`;
+  const startDate = new Date(`${start}T00:00:00.000Z`);
+  const next = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + 1, 1));
+  const endExclusive = `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}-01`;
+
+  let expQuery = supabase
+    .from('expenses')
+    .select('*, units(unit_number, floor, hostel_id, hostels(name)), expense_categories(name)')
+    .gte('expense_date', start)
+    .lt('expense_date', endExclusive);
+
+  if (unitId) {
+    expQuery = expQuery.eq('unit_id', unitId);
+  } else if (hostelId) {
+    const unitsInHostelRes = await supabase.from('units').select('id').eq('hostel_id', hostelId);
+    throwIfError(unitsInHostelRes.error, 'Failed to load units for hostel filter');
+    const unitIdsForHostel = (unitsInHostelRes.data || []).map((u: any) => u.id);
+    if (unitIdsForHostel.length === 0) {
+      // No units in this hostel => no expenses to return
+      const expenseRows: any[] = [];
+      return { data: { incomeRows, expenseRows, totalIncome, totalExpense: 0, profit: totalIncome, month, year } };
+    }
+    expQuery = expQuery.in('unit_id', unitIdsForHostel);
+  }
+
+  const expRes = await expQuery.order('expense_date', { ascending: false }).order('created_at', { ascending: false });
+  throwIfError(expRes.error, 'Failed to load expenses');
+
+  const expenseRows = (expRes.data || []).map((e: any) => {
+    const u = e.units || {};
+    const h = u.hostels || u.hostel || {};
+    return {
+      expenseId: e.id,
+      expenseName: e.expense_name,
+      categoryName: e.expense_categories?.name ?? '',
+      amount: Number(e.amount ?? 0),
+      expenseDate: e.expense_date,
+      notes: e.notes ?? '',
+      unitId: e.unit_id,
+      unitNumber: u.unit_number ?? '',
+      unitFloor: u.floor ?? '',
+      buildingName: (typeof h === 'object' && h !== null && 'name' in h ? h.name : '') ?? '',
+    };
+  });
+
+  const totalExpense = expenseRows.reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+  const profit = totalIncome - totalExpense;
+
+  return { data: { incomeRows, expenseRows, totalIncome, totalExpense, profit, month, year } };
+};
+
 const dispatch = async (method: Method, path: string, payload?: any): Promise<ApiResponse> => {
   if (method === 'POST' && path === '/auth/login') return authLogin(payload);
   if (method === 'POST' && path === '/auth/signup') return authSignup(payload);
@@ -1400,6 +1552,20 @@ const dispatch = async (method: Method, path: string, payload?: any): Promise<Ap
   }
 
   if (method === 'GET' && path === '/client-history') return getClientHistory();
+  if (method === 'GET' && path.startsWith('/analytics')) {
+    const hostelId = getQueryParam(path, 'hostelId') || undefined;
+    const unitId = getQueryParam(path, 'unitId') || undefined;
+    const month = getQueryParam(path, 'month');
+    const year = getQueryParam(path, 'year');
+    const search = getQueryParam(path, 'search') || undefined;
+    return getAnalytics({
+      hostelId,
+      unitId,
+      month: month ? Number(month) : undefined,
+      year: year ? Number(year) : undefined,
+      search,
+    });
+  }
   if (method === 'GET' && path.startsWith('/income')) {
     if (path.startsWith('/income/paid-months')) {
       const bedId = getQueryParam(path, 'bedId') || '';
