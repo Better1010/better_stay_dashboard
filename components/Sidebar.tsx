@@ -20,6 +20,8 @@ const roleConfig = {
       // { name: 'Hostel Admins', path: '/super-admin/admins', icon: '👥' },
       { name: 'Expense', path: '/super-admin/expenses', icon: '🧾' },
       { name: 'Income', path: '/super-admin/income', icon: '💵' },
+      { name: 'Deposit', path: '/super-admin/deposit', icon: '🏦' },
+      { name: 'Investment', path: '/super-admin/investment', icon: '📌' },
       // { name: 'Client history', path: '/super-admin/client-history', icon: '📋' },
       // { name: 'Revenue Reports', path: '/super-admin/reports', icon: '💰' },
       { name: 'Analytics', path: '/super-admin/analytics', icon: '📈' },

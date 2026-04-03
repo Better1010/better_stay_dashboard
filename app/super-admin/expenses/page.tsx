@@ -132,7 +132,6 @@ export default function SuperAdminExpensesPage() {
       showToast('Expense deleted successfully');
       loadData();
     } catch (err: unknown) {
-      setDeleteConfirm(null);
       showToast(getErrorMessage(err, 'Failed to delete expense'), 'error');
     } finally {
       setDeleting(false);
@@ -590,21 +589,23 @@ export default function SuperAdminExpensesPage() {
                         ৳{Number(e.amount).toFixed(2)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{formatDate(e.expenseDate)}</td>
-                      <td className="space-x-3 whitespace-nowrap px-6 py-4 text-right text-sm font-medium">
-                        <button
-                          type="button"
-                          onClick={() => openEditExpense(e)}
-                          className="text-primary hover:text-primary/80"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDeleteConfirm(e)}
-                          className="text-secondary hover:text-secondary/80"
-                        >
-                          Delete
-                        </button>
+                      <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-medium">
+                        <div className="flex flex-wrap items-center justify-end gap-3">
+                          <button
+                            type="button"
+                            onClick={() => openEditExpense(e)}
+                            className="text-primary hover:text-primary/80"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirm(e)}
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -737,7 +738,7 @@ export default function SuperAdminExpensesPage() {
                   type="button"
                   onClick={handleDeleteExpense}
                   disabled={deleting}
-                  className="rounded-lg bg-secondary px-4 py-2 text-white hover:bg-secondary/90 disabled:opacity-50"
+                  className="rounded-lg bg-red-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {deleting ? 'Deleting...' : 'Delete'}
                 </button>

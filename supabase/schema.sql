@@ -200,6 +200,29 @@ create table if not exists public.income_payments (
 create index if not exists income_payments_year_month_idx on public.income_payments(year, month);
 create index if not exists income_payments_bed_id_idx on public.income_payments(bed_id);
 
+create table if not exists public.deposits (
+  id uuid primary key default gen_random_uuid(),
+  registered_user_id uuid not null references public.registered_users(id) on delete cascade,
+  amount numeric(12,2) not null default 0,
+  created_by uuid null references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists deposits_registered_user_id_idx on public.deposits(registered_user_id);
+create index if not exists deposits_created_at_idx on public.deposits(created_at desc);
+
+create table if not exists public.investments (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  description text null,
+  date date not null,
+  amount numeric(12,2) not null default 0,
+  created_by uuid null references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists investments_date_idx on public.investments(date desc);
+
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -230,6 +253,10 @@ drop trigger if exists tasks_set_updated_at on public.tasks;
 create trigger tasks_set_updated_at before update on public.tasks for each row execute function public.set_updated_at();
 drop trigger if exists income_payments_set_updated_at on public.income_payments;
 create trigger income_payments_set_updated_at before update on public.income_payments for each row execute function public.set_updated_at();
+drop trigger if exists deposits_set_updated_at on public.deposits;
+create trigger deposits_set_updated_at before update on public.deposits for each row execute function public.set_updated_at();
+drop trigger if exists investments_set_updated_at on public.investments;
+create trigger investments_set_updated_at before update on public.investments for each row execute function public.set_updated_at();
 
 alter table public.hostels enable row level security;
 alter table public.units enable row level security;
@@ -243,6 +270,8 @@ alter table public.notices enable row level security;
 alter table public.expense_categories enable row level security;
 alter table public.expenses enable row level security;
 alter table public.income_payments enable row level security;
+alter table public.deposits enable row level security;
+alter table public.investments enable row level security;
 
 drop policy if exists hostels_authenticated on public.hostels;
 create policy hostels_authenticated on public.hostels for all using (auth.role() = 'authenticated');
@@ -268,3 +297,7 @@ drop policy if exists expenses_authenticated on public.expenses;
 create policy expenses_authenticated on public.expenses for all using (auth.role() = 'authenticated');
 drop policy if exists income_payments_authenticated on public.income_payments;
 create policy income_payments_authenticated on public.income_payments for all using (auth.role() = 'authenticated');
+drop policy if exists deposits_authenticated on public.deposits;
+create policy deposits_authenticated on public.deposits for all using (auth.role() = 'authenticated');
+drop policy if exists investments_authenticated on public.investments;
+create policy investments_authenticated on public.investments for all using (auth.role() = 'authenticated');

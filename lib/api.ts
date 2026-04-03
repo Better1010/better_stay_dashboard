@@ -1315,7 +1315,7 @@ const getAnalytics = async (queryParams?: {
   const bedsRes =
     bedIds.length > 0
       ? await supabase.from('beds').select('id, bed_number, base_price, room_id').in('id', bedIds)
-      : Promise.resolve({ data: [], error: null } as any);
+      : { data: [] as any[], error: null };
   throwIfError(bedsRes.error, 'Failed to load beds');
 
   const beds = bedsRes.data || [];
@@ -1324,7 +1324,7 @@ const getAnalytics = async (queryParams?: {
   const roomsRes =
     roomIds.length > 0
       ? await supabase.from('rooms').select('id, room_number, unit_id, hostel_id').in('id', roomIds)
-      : Promise.resolve({ data: [], error: null } as any);
+      : { data: [] as any[], error: null };
   throwIfError(roomsRes.error, 'Failed to load rooms');
   const rooms = roomsRes.data || [];
 
@@ -1435,6 +1435,114 @@ const getAnalytics = async (queryParams?: {
   const profit = totalIncome - totalExpense;
 
   return { data: { incomeRows, expenseRows, totalIncome, totalExpense, profit, month, year } };
+};
+
+const getDeposits = async (queryParams?: { search?: string }): Promise<ApiResponse> => {
+  requireAuthUser();
+  const search = (queryParams?.search || '').trim().toLowerCase();
+
+  const depRes = await supabase
+    .from('deposits')
+    .select('id, registered_user_id, amount, created_at')
+    .order('created_at', { ascending: false });
+  throwIfError(depRes.error, 'Failed to load deposits');
+
+  const deposits = depRes.data || [];
+  const userIds = Array.from(new Set(deposits.map((d: any) => d.registered_user_id).filter(Boolean)));
+  const usersRes =
+    userIds.length > 0
+      ? await supabase
+          .from('registered_users')
+          .select('id, name, mobile_number')
+          .in('id', userIds)
+      : ({ data: [], error: null } as any);
+  throwIfError(usersRes.error, 'Failed to load registered users');
+  const usersById = new Map<string, any>((usersRes.data || []).map((u: any) => [u.id, u]));
+
+  const rows = deposits
+    .map((d: any) => {
+      const user = usersById.get(d.registered_user_id);
+      return {
+        id: d.id,
+        registeredUserId: d.registered_user_id,
+        clientName: user?.name || 'Unknown',
+        mobileNumber: user?.mobile_number || '',
+        amount: Number(d.amount || 0),
+        createdAt: d.created_at,
+      };
+    })
+    .filter((row: any) => (search ? row.clientName.toLowerCase().includes(search) : true));
+
+  const totalDeposit = rows.reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
+  return { data: { deposits: rows, totalDeposit } };
+};
+
+const createDeposit = async (payload: any): Promise<ApiResponse> => {
+  const current = requireAuthUser();
+  const registeredUserId = payload?.registeredUserId ? String(payload.registeredUserId) : '';
+  const amount = Number(payload?.amount);
+  if (!registeredUserId) throw new ApiRequestError(400, 'registeredUserId is required');
+  if (!Number.isFinite(amount) || amount <= 0) throw new ApiRequestError(400, 'Valid amount is required');
+
+  const userRes = await supabase.from('registered_users').select('id').eq('id', registeredUserId).single();
+  throwIfError(userRes.error, 'Registered user not found');
+  if (!userRes.data) throw new ApiRequestError(404, 'Registered user not found');
+
+  const res = await supabase
+    .from('deposits')
+    .insert({
+      registered_user_id: registeredUserId,
+      amount,
+      created_by: current.id,
+      created_at: nowIso(),
+      updated_at: nowIso(),
+    })
+    .select('*')
+    .single();
+  throwIfError(res.error, 'Failed to create deposit');
+  return { data: { deposit: res.data } };
+};
+
+const getInvestments = async (): Promise<ApiResponse> => {
+  requireAuthUser();
+  const res = await supabase.from('investments').select('*').order('date', { ascending: false }).order('created_at', { ascending: false });
+  throwIfError(res.error, 'Failed to load investments');
+  const investments = (res.data || []).map((row: any) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description ?? '',
+    date: row.date,
+    amount: Number(row.amount ?? 0),
+    createdAt: row.created_at,
+  }));
+  return { data: { investments } };
+};
+
+const createInvestment = async (payload: any): Promise<ApiResponse> => {
+  const current = requireAuthUser();
+  const name = payload?.name ? String(payload.name).trim() : '';
+  const description = payload?.description ? String(payload.description).trim() : '';
+  const date = payload?.date ? String(payload.date) : '';
+  const amount = Number(payload?.amount);
+  if (!name) throw new ApiRequestError(400, 'Investment name is required');
+  if (!date) throw new ApiRequestError(400, 'Investment date is required');
+  if (!Number.isFinite(amount) || amount <= 0) throw new ApiRequestError(400, 'Valid investment amount is required');
+
+  const res = await supabase
+    .from('investments')
+    .insert({
+      name,
+      description: description || null,
+      date,
+      amount,
+      created_by: current.id,
+      created_at: nowIso(),
+      updated_at: nowIso(),
+    })
+    .select('*')
+    .single();
+  throwIfError(res.error, 'Failed to create investment');
+  return { data: { investment: res.data } };
 };
 
 const dispatch = async (method: Method, path: string, payload?: any): Promise<ApiResponse> => {
@@ -1552,6 +1660,13 @@ const dispatch = async (method: Method, path: string, payload?: any): Promise<Ap
   }
 
   if (method === 'GET' && path === '/client-history') return getClientHistory();
+  if (method === 'GET' && path.startsWith('/deposits')) {
+    const search = getQueryParam(path, 'search') || undefined;
+    return getDeposits({ search });
+  }
+  if (method === 'POST' && path === '/deposits') return createDeposit(payload);
+  if (method === 'GET' && path === '/investments') return getInvestments();
+  if (method === 'POST' && path === '/investments') return createInvestment(payload);
   if (method === 'GET' && path.startsWith('/analytics')) {
     const hostelId = getQueryParam(path, 'hostelId') || undefined;
     const unitId = getQueryParam(path, 'unitId') || undefined;
