@@ -5,10 +5,20 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
 
+function getErrorMessage(err: unknown, fallback: string): string {
+  if (err && typeof err === 'object' && 'response' in err) {
+    const res = (err as { response?: { data?: { message?: string } } }).response;
+    if (res?.data?.message && typeof res.data.message === 'string') return res.data.message;
+  }
+  return fallback;
+}
+
 export default function SuperAdminHostelsPage() {
   const [hostels, setHostels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
@@ -40,6 +50,20 @@ export default function SuperAdminHostelsPage() {
       fetchHostels();
     } catch (err: any) {
       alert(err.response?.data?.message || 'Failed to add building');
+    }
+  };
+
+  const handleDeleteBuilding = async () => {
+    if (!deleteConfirm) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/hostels/${deleteConfirm.id}`);
+      setDeleteConfirm(null);
+      fetchHostels();
+    } catch (err: unknown) {
+      alert(getErrorMessage(err, 'Failed to delete building'));
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -91,13 +115,24 @@ export default function SuperAdminHostelsPage() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {h.total_rooms ?? 0} rooms, {h.total_beds ?? 0} beds
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
-                        <Link
-                          href={`/super-admin/hostels/${h.id || h._id}`}
-                          className="text-indigo-600 hover:text-indigo-900"
-                        >
-                          Manage units & rooms
-                        </Link>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <div className="flex flex-wrap items-center justify-end gap-3">
+                          <Link
+                            href={`/super-admin/hostels/${h.id || h._id}`}
+                            className="text-indigo-600 hover:text-indigo-900"
+                          >
+                            Manage units & rooms
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDeleteConfirm({ id: String(h.id || h._id), name: String(h.name || 'Building') })
+                            }
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -106,6 +141,36 @@ export default function SuperAdminHostelsPage() {
             </table>
           </div>
         </div>
+
+        {deleteConfirm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-xl">
+              <h4 className="text-lg font-semibold mb-2 text-gray-900">Delete building</h4>
+              <p className="text-sm text-gray-600 mb-4">
+                Delete <strong>&quot;{deleteConfirm.name}&quot;</strong>? This permanently removes all units, rooms,
+                beds, and related records for this building. This cannot be undone.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirm(null)}
+                  disabled={deleting}
+                  className="px-4 py-2 text-gray-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteBuilding}
+                  disabled={deleting}
+                  className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleting ? 'Deleting…' : 'Delete building'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {showAddModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
