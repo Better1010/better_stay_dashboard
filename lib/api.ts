@@ -120,6 +120,7 @@ const getRegisteredUsers = async (): Promise<ApiResponse> => {
     nidFrontUrl: u.nid_picture_front_url,
     nidBackUrl: u.nid_picture_back_url,
     createdAt: u.created_at,
+    updatedAt: u.updated_at,
   }));
   return { data: { users } };
 };
@@ -154,6 +155,45 @@ const createRegisteredUser = async (payload: any): Promise<ApiResponse> => {
         nidFrontUrl: res.data.nid_picture_front_url,
         nidBackUrl: res.data.nid_picture_back_url,
         createdAt: res.data.created_at,
+        updatedAt: res.data.updated_at,
+      },
+    },
+  };
+};
+
+const updateRegisteredUser = async (id: string, payload: any): Promise<ApiResponse> => {
+  requireAuthUser();
+  const updates: any = { updated_at: nowIso() };
+  if (payload?.name !== undefined) {
+    const name = String(payload.name).trim();
+    if (!name) throw new ApiRequestError(400, 'User name is required');
+    updates.name = name;
+  }
+  if (payload?.mobileNumber !== undefined) {
+    updates.mobile_number = String(payload.mobileNumber).trim() || null;
+  }
+  if (payload?.nidFrontUrl != null && String(payload.nidFrontUrl).trim() !== '') {
+    updates.nid_picture_front_url = String(payload.nidFrontUrl).trim();
+  }
+  if (payload?.nidBackUrl != null && String(payload.nidBackUrl).trim() !== '') {
+    updates.nid_picture_back_url = String(payload.nidBackUrl).trim();
+  }
+  const changed = Object.keys(updates).filter((k) => k !== 'updated_at');
+  if (changed.length === 0) throw new ApiRequestError(400, 'No changes to save');
+
+  const res = await supabase.from('registered_users').update(updates).eq('id', id).select('*').single();
+  throwIfError(res.error, 'Failed to update registered user');
+  const u = res.data;
+  return {
+    data: {
+      user: {
+        id: u.id,
+        name: u.name,
+        mobileNumber: u.mobile_number ?? '',
+        nidFrontUrl: u.nid_picture_front_url,
+        nidBackUrl: u.nid_picture_back_url,
+        createdAt: u.created_at,
+        updatedAt: u.updated_at,
       },
     },
   };
@@ -1545,6 +1585,44 @@ const createInvestment = async (payload: any): Promise<ApiResponse> => {
   return { data: { investment: res.data } };
 };
 
+const updateInvestment = async (id: string, payload: any): Promise<ApiResponse> => {
+  requireAuthUser();
+  const name = payload?.name != null ? String(payload.name).trim() : '';
+  const description = payload?.description != null ? String(payload.description).trim() : '';
+  const date = payload?.date != null ? String(payload.date) : '';
+  const amount = Number(payload?.amount);
+  if (!name) throw new ApiRequestError(400, 'Investment name is required');
+  if (!date) throw new ApiRequestError(400, 'Investment date is required');
+  if (!Number.isFinite(amount) || amount <= 0) throw new ApiRequestError(400, 'Valid investment amount is required');
+
+  const res = await supabase
+    .from('investments')
+    .update({
+      name,
+      description: description || null,
+      date,
+      amount,
+      updated_at: nowIso(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
+  throwIfError(res.error, 'Failed to update investment');
+  const row = res.data;
+  return {
+    data: {
+      investment: {
+        id: row.id,
+        name: row.name,
+        description: row.description ?? '',
+        date: row.date,
+        amount: Number(row.amount ?? 0),
+        createdAt: row.created_at,
+      },
+    },
+  };
+};
+
 const dispatch = async (method: Method, path: string, payload?: any): Promise<ApiResponse> => {
   if (method === 'POST' && path === '/auth/login') return authLogin(payload);
   if (method === 'POST' && path === '/auth/signup') return authSignup(payload);
@@ -1553,6 +1631,11 @@ const dispatch = async (method: Method, path: string, payload?: any): Promise<Ap
   if (method === 'GET' && path === '/users/pending') return getPendingUsers();
   if (method === 'GET' && path === '/registered-users') return getRegisteredUsers();
   if (method === 'POST' && path === '/registered-users') return createRegisteredUser(payload);
+  if (method === 'PATCH' && path.match(/^\/registered-users\/[^/]+$/)) {
+    const id = getPathParam(path, /^\/registered-users\/([^/]+)$/);
+    if (!id) throw new ApiRequestError(404, 'Not found');
+    return updateRegisteredUser(id, payload);
+  }
   if (method === 'PATCH' && path.startsWith('/users/')) {
     const id = getPathParam(path, /^\/users\/([^/]+)\/status$/);
     if (!id) throw new ApiRequestError(404, 'Endpoint not found');
@@ -1667,6 +1750,11 @@ const dispatch = async (method: Method, path: string, payload?: any): Promise<Ap
   if (method === 'POST' && path === '/deposits') return createDeposit(payload);
   if (method === 'GET' && path === '/investments') return getInvestments();
   if (method === 'POST' && path === '/investments') return createInvestment(payload);
+  if (method === 'PATCH' && path.match(/^\/investments\/[^/]+$/)) {
+    const id = getPathParam(path, /^\/investments\/([^/]+)$/);
+    if (!id) throw new ApiRequestError(404, 'Not found');
+    return updateInvestment(id, payload);
+  }
   if (method === 'GET' && path.startsWith('/analytics')) {
     const hostelId = getQueryParam(path, 'hostelId') || undefined;
     const unitId = getQueryParam(path, 'unitId') || undefined;

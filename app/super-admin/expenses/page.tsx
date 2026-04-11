@@ -4,6 +4,9 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { useEffect, useMemo, useState } from 'react';
 import api from '@/lib/api';
 
+const editActionButtonClass =
+  'rounded-md bg-blue-600 px-2.5 py-1 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1';
+
 type Category = { id: string; name: string };
 type Building = { id: string; name: string };
 type Unit = { id: string; hostelId: string; hostelName?: string; unitNumber: string; floor: number };
@@ -591,11 +594,7 @@ export default function SuperAdminExpensesPage() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{formatDate(e.expenseDate)}</td>
                       <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-medium">
                         <div className="flex flex-wrap items-center justify-end gap-3">
-                          <button
-                            type="button"
-                            onClick={() => openEditExpense(e)}
-                            className="text-primary hover:text-primary/80"
-                          >
+                          <button type="button" onClick={() => openEditExpense(e)} className={editActionButtonClass}>
                             Edit
                           </button>
                           <button

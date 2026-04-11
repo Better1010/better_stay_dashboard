@@ -1,9 +1,17 @@
 'use client';
 
 import DashboardLayout from '@/components/DashboardLayout';
-import { useEffect, useState } from 'react';
-import api from '@/lib/api';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { BedDouble, Wallet, CreditCard, MessageSquare, Megaphone } from 'lucide-react';
+import api from '@/lib/api';
+import {
+  DashboardSpinner,
+  PageHeader,
+  Panel,
+  QuickActionCard,
+} from '@/components/dashboard/DashboardUi';
+import { cn } from '@/lib/utils';
 
 export default function ResidentDashboard() {
   const [roomInfo, setRoomInfo] = useState<any>(null);
@@ -11,125 +19,142 @@ export default function ResidentDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchData();
+    let cancelled = false;
+    (async () => {
+      try {
+        const [roomRes, paymentsRes] = await Promise.all([
+          api.get('/rooms/my-room'),
+          api.get('/payments'),
+        ]);
+        if (cancelled) return;
+        setRoomInfo(roomRes.data.room);
+        const payments = paymentsRes.data.payments || [];
+        setRentStatus(payments[0] || null);
+      } catch {
+        if (!cancelled) {
+          setRoomInfo(null);
+          setRentStatus(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const fetchData = async () => {
-    try {
-      const [roomRes, paymentsRes] = await Promise.all([
-        api.get('/rooms/my-room'),
-        api.get('/payments'),
-      ]);
-
-      setRoomInfo(roomRes.data.room);
-      const payments = paymentsRes.data.payments || [];
-      const latestPayment = payments[0];
-      setRentStatus(latestPayment);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      setLoading(false);
-    }
-  };
+  const paymentBadge =
+    rentStatus?.status === 'approved'
+      ? 'bg-success/15 text-success'
+      : rentStatus?.status === 'pending'
+        ? 'bg-brand-muted text-brand-foreground'
+        : 'bg-destructive/10 text-destructive';
 
   return (
     <DashboardLayout requiredRole={['resident']}>
-      <div>
-        <h2 className="text-3xl font-bold text-gray-900 mb-6">Resident Dashboard</h2>
+      <PageHeader
+        title="Dashboard"
+        description="Your room, rent status, and shortcuts to payments and notices."
+      />
 
-        {loading ? (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-xl font-semibold mb-4">My Room</h3>
+      {loading ? (
+        <DashboardSpinner />
+      ) : (
+        <div className="space-y-8">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Panel title="My room">
               {roomInfo ? (
-                <div>
-                  <p className="text-gray-600">
-                    <span className="font-semibold">Room:</span> {roomInfo.roomNumber}
-                  </p>
-                  <p className="text-gray-600 mt-2">
-                    <span className="font-semibold">Floor:</span> {roomInfo.floor}
-                  </p>
-                  <p className="text-gray-600 mt-2">
-                    <span className="font-semibold">Rent:</span> ৳{roomInfo.rent}/month
-                  </p>
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-lg bg-primary/10 p-2 text-primary">
+                      <BedDouble className="h-5 w-5" aria-hidden />
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Room</p>
+                      <p className="text-lg font-semibold text-foreground">{roomInfo.roomNumber}</p>
+                    </div>
+                  </div>
+                  <dl className="grid gap-2 border-t border-border pt-3 sm:grid-cols-2">
+                    <div>
+                      <dt className="text-muted-foreground">Floor</dt>
+                      <dd className="font-medium text-foreground">{roomInfo.floor}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Rent</dt>
+                      <dd className="font-medium text-foreground">৳{roomInfo.rent}/month</dd>
+                    </div>
+                  </dl>
                   <Link
                     href="/resident/room"
-                    className="mt-4 inline-block text-green-600 hover:text-green-700 font-medium"
+                    className="inline-flex text-sm font-medium text-primary hover:underline"
                   >
-                    View Details →
+                    View full details →
                   </Link>
                 </div>
               ) : (
-                <p className="text-gray-500">No room assigned yet</p>
+                <p className="text-sm text-muted-foreground">No room assigned yet.</p>
               )}
-            </div>
+            </Panel>
 
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-xl font-semibold mb-4">Rent Status</h3>
+            <Panel title="Rent status">
               {rentStatus ? (
-                <div>
-                  <p className="text-gray-600">
-                    <span className="font-semibold">Amount:</span> ৳{rentStatus.amount}
-                  </p>
-                  <p className="text-gray-600 mt-2">
-                    <span className="font-semibold">Status:</span>{' '}
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-lg bg-muted p-2 text-foreground">
+                      <Wallet className="h-5 w-5" aria-hidden />
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Latest</p>
+                      <p className="text-lg font-semibold text-foreground">৳{rentStatus.amount}</p>
+                    </div>
+                  </div>
+                  <p className="text-muted-foreground">
+                    Status{' '}
                     <span
-                      className={`px-2 py-1 rounded text-sm ${
-                        rentStatus.status === 'approved'
-                          ? 'bg-green-100 text-green-800'
-                          : rentStatus.status === 'pending'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}
+                      className={cn('ml-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium', paymentBadge)}
                     >
                       {rentStatus.status}
                     </span>
                   </p>
                   <Link
                     href="/resident/rent"
-                    className="mt-4 inline-block text-green-600 hover:text-green-700 font-medium"
+                    className="inline-flex text-sm font-medium text-primary hover:underline"
                   >
-                    View Details →
+                    View rent details →
                   </Link>
                 </div>
               ) : (
-                <p className="text-gray-500">No payment records</p>
+                <p className="text-sm text-muted-foreground">No payment records yet.</p>
               )}
+            </Panel>
+          </div>
+
+          <div>
+            <h2 className="mb-4 text-base font-semibold text-foreground">Quick actions</h2>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <QuickActionCard
+                href="/resident/payments"
+                title="Payments"
+                description="View history and make a payment."
+                icon={CreditCard}
+              />
+              <QuickActionCard
+                href="/resident/complaints"
+                title="Complaints"
+                description="Report an issue to management."
+                icon={MessageSquare}
+              />
+              <QuickActionCard
+                href="/resident/notices"
+                title="Notices"
+                description="Read announcements from your hostel."
+                icon={Megaphone}
+              />
             </div>
           </div>
-        )}
-
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-xl font-semibold mb-4">Quick Actions</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Link
-              href="/resident/payments"
-              className="p-4 border-2 border-gray-200 rounded-lg hover:border-green-600 transition"
-            >
-              <h4 className="font-semibold">Make Payment</h4>
-              <p className="text-sm text-gray-600 mt-1">Pay your rent online</p>
-            </Link>
-            <Link
-              href="/resident/complaints"
-              className="p-4 border-2 border-gray-200 rounded-lg hover:border-green-600 transition"
-            >
-              <h4 className="font-semibold">Submit Complaint</h4>
-              <p className="text-sm text-gray-600 mt-1">Report an issue</p>
-            </Link>
-            <Link
-              href="/resident/notices"
-              className="p-4 border-2 border-gray-200 rounded-lg hover:border-green-600 transition"
-            >
-              <h4 className="font-semibold">View Notices</h4>
-              <p className="text-sm text-gray-600 mt-1">Check latest announcements</p>
-            </Link>
-          </div>
         </div>
-      </div>
+      )}
     </DashboardLayout>
   );
 }
