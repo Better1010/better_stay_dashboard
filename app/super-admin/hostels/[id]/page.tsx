@@ -7,6 +7,9 @@ import { useEffect, useState } from 'react';
 import api from '@/lib/api';
 import { uploadBedPicture } from '@/lib/supabase';
 
+const editActionButtonClass =
+  'rounded-md bg-blue-600 px-2.5 py-1 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1';
+
 export default function BuildingDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -23,6 +26,11 @@ export default function BuildingDetailPage() {
   const [viewStep, setViewStep] = useState<ViewStep>('units');
 
   const [unitModal, setUnitModal] = useState(false);
+  const [editUnitModal, setEditUnitModal] = useState<{ id: string; unitNumber: string; floor: number } | null>(null);
+  const [editUnitNumber, setEditUnitNumber] = useState('');
+  const [editUnitFloor, setEditUnitFloor] = useState(1);
+  const [deleteUnitConfirm, setDeleteUnitConfirm] = useState<{ id: string; unitNumber: string } | null>(null);
+  const [deletingUnit, setDeletingUnit] = useState(false);
   const [roomModal, setRoomModal] = useState(false);
   const [bedModal, setBedModal] = useState(false);
   const [assignModal, setAssignModal] = useState<{ bedId: string; bedNumber: string } | null>(null);
@@ -100,7 +108,11 @@ export default function BuildingDetailPage() {
   const handleAddUnit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post('/units', { hostelId: buildingId, unitNumber: unitNumber.trim(), floor: unitFloor });
+      await api.post('/units', {
+        hostelId: buildingId,
+        unitNumber: unitNumber.trim().toUpperCase(),
+        floor: unitFloor,
+      });
       setUnitModal(false);
       setUnitNumber('');
       setUnitFloor(1);
@@ -110,13 +122,55 @@ export default function BuildingDetailPage() {
     }
   };
 
+  const openEditUnit = (u: any) => {
+    const id = u.id || u._id;
+    const num = String(u.unitNumber ?? '').toUpperCase();
+    setEditUnitModal({ id, unitNumber: num, floor: u.floor });
+    setEditUnitNumber(num);
+    setEditUnitFloor(u.floor);
+  };
+
+  const handleEditUnit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editUnitModal) return;
+    try {
+      await api.patch(`/units/${editUnitModal.id}`, {
+        unitNumber: editUnitNumber.trim().toUpperCase(),
+        floor: editUnitFloor,
+      });
+      setEditUnitModal(null);
+      refreshUnits();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to update unit');
+    }
+  };
+
+  const handleDeleteUnit = async () => {
+    if (!deleteUnitConfirm) return;
+    setDeletingUnit(true);
+    try {
+      await api.delete(`/units/${deleteUnitConfirm.id}`);
+      if (selectedUnitId === deleteUnitConfirm.id) {
+        setSelectedUnitId(null);
+        setSelectedRoomId(null);
+        setViewStep('units');
+      }
+      setDeleteUnitConfirm(null);
+      refreshUnits();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to delete unit');
+    } finally {
+      setDeletingUnit(false);
+    }
+  };
+
   const handleAddRoom = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await api.post('/rooms', {
         hostelId: buildingId,
         unitId: selectedUnitId || undefined,
-        roomNumber: roomNumber.trim(),
+        roomNumber: roomNumber.trim().toUpperCase(),
         floor: 0,
         totalBeds: 0,
       });
@@ -129,8 +183,9 @@ export default function BuildingDetailPage() {
   };
 
   const openEditRoom = (r: any) => {
-    setEditRoomModal({ id: r.id, roomNumber: r.roomNumber, totalBeds: r.totalBeds });
-    setEditRoomNumber(r.roomNumber);
+    const num = String(r.roomNumber ?? '').toUpperCase();
+    setEditRoomModal({ id: r.id, roomNumber: num, totalBeds: r.totalBeds });
+    setEditRoomNumber(num);
     setEditRoomTotalBeds(r.totalBeds);
   };
 
@@ -139,7 +194,7 @@ export default function BuildingDetailPage() {
     if (!editRoomModal) return;
     try {
       await api.patch(`/rooms/${editRoomModal.id}`, {
-        roomNumber: editRoomNumber.trim(),
+        roomNumber: editRoomNumber.trim().toUpperCase(),
         totalBeds: editRoomTotalBeds,
       });
       setEditRoomModal(null);
@@ -152,7 +207,7 @@ export default function BuildingDetailPage() {
   const handleAddBed = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedRoomId) return;
-    const num = bedNumber.trim();
+    const num = bedNumber.trim().toUpperCase();
     if (!num) {
       alert('Please enter a bed number (e.g. B1, B2).');
       return;
@@ -233,14 +288,15 @@ export default function BuildingDetailPage() {
   };
 
   const openEditBed = (b: any) => {
+    const bedNum = String(b.bedNumber ?? '').toUpperCase();
     setEditBedModal({
       id: b.id,
-      bedNumber: b.bedNumber,
+      bedNumber: bedNum,
       basePrice: b.basePrice,
       pictureUrl: b.pictureUrl || '',
       assigneeName: b.assigneeName || '',
     });
-    setEditBedNumber(b.bedNumber);
+    setEditBedNumber(bedNum);
     setEditBedBasePrice(b.basePrice);
     setEditBedPictureUrl(b.pictureUrl || '');
     setEditBedPictureFile(null);
@@ -257,7 +313,7 @@ export default function BuildingDetailPage() {
         pictureUrl = await uploadBedPicture(editBedPictureFile, editBedModal.id);
       }
       await api.patch(`/beds/${editBedModal.id}`, {
-        bedNumber: editBedNumber.trim(),
+        bedNumber: editBedNumber.trim().toUpperCase(),
         basePrice: editBedBasePrice,
         pictureUrl: pictureUrl || null,
         assigneeName: editAssigneeName.trim() || null,
@@ -322,25 +378,42 @@ export default function BuildingDetailPage() {
                       </td>
                     </tr>
                   ) : (
-                    units.map((u: any) => (
-                      <tr key={u.id}>
-                        <td className="px-4 py-2 text-sm font-medium text-gray-900">{u.unitNumber}</td>
-                        <td className="px-4 py-2 text-sm text-gray-600">{u.floor}</td>
-                        <td className="px-4 py-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedUnitId(u.id);
-                              setSelectedRoomId(null);
-                              setViewStep('rooms');
-                            }}
-                            className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
-                          >
-                            Show rooms
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                    units.map((u: any) => {
+                      const uid = u.id || u._id;
+                      return (
+                        <tr key={uid}>
+                          <td className="px-4 py-2 text-sm font-medium text-gray-900">{u.unitNumber}</td>
+                          <td className="px-4 py-2 text-sm text-gray-600">{u.floor}</td>
+                          <td className="px-4 py-2 text-right">
+                            <div className="flex flex-wrap items-center justify-end gap-2">
+                              <button type="button" onClick={() => openEditUnit(u)} className={editActionButtonClass}>
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDeleteUnitConfirm({ id: String(uid), unitNumber: String(u.unitNumber || 'Unit') })
+                                }
+                                className="text-red-600 hover:text-red-800 text-sm font-medium"
+                              >
+                                Delete
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedUnitId(uid);
+                                  setSelectedRoomId(null);
+                                  setViewStep('rooms');
+                                }}
+                                className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+                              >
+                                Show rooms
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -397,11 +470,7 @@ export default function BuildingDetailPage() {
                           <td className="px-4 py-2 text-sm font-medium text-gray-900">{r.roomNumber}</td>
                           <td className="px-4 py-2 text-sm text-gray-600">{r.bedCount ?? 0}</td>
                           <td className="px-4 py-2 text-right space-x-2">
-                            <button
-                              type="button"
-                              onClick={() => openEditRoom(r)}
-                              className="text-gray-600 hover:text-gray-900 text-sm font-medium"
-                            >
+                            <button type="button" onClick={() => openEditRoom(r)} className={editActionButtonClass}>
                               Edit
                             </button>
                             <button
@@ -503,11 +572,7 @@ export default function BuildingDetailPage() {
                               View
                             </button>
                           ) : null}
-                          <button
-                            type="button"
-                            onClick={() => openEditBed(b)}
-                            className="text-gray-600 hover:text-gray-900 text-sm font-medium"
-                          >
+                          <button type="button" onClick={() => openEditBed(b)} className={editActionButtonClass}>
                             Edit
                           </button>
                           {(b.residentId || b.assigneeName) ? (
@@ -547,8 +612,8 @@ export default function BuildingDetailPage() {
                   <input
                     type="text"
                     value={unitNumber}
-                    onChange={(e) => setUnitNumber(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
+                    onChange={(e) => setUnitNumber(e.target.value.toUpperCase())}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 uppercase text-gray-900 placeholder:text-gray-400"
                     required
                   />
                 </div>
@@ -575,6 +640,74 @@ export default function BuildingDetailPage() {
           </div>
         )}
 
+        {editUnitModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-xl">
+              <h4 className="text-lg font-semibold mb-4 text-gray-900">Edit Unit {editUnitModal.unitNumber}</h4>
+              <form onSubmit={handleEditUnit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">Unit number</label>
+                  <input
+                    type="text"
+                    value={editUnitNumber}
+                    onChange={(e) => setEditUnitNumber(e.target.value.toUpperCase())}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 uppercase text-gray-900 placeholder:text-gray-400"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">Floor (100 = 1st)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editUnitFloor}
+                    onChange={(e) => setEditUnitFloor(Number(e.target.value))}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
+                  />
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <button type="button" onClick={() => setEditUnitModal(null)} className="px-4 py-2 text-gray-600">
+                    Cancel
+                  </button>
+                  <button type="submit" className="px-4 py-2 bg-black text-yellow-400 rounded-lg">
+                    Save
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {deleteUnitConfirm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-xl">
+              <h4 className="text-lg font-semibold mb-2 text-gray-900">Delete unit</h4>
+              <p className="text-sm text-gray-600 mb-4">
+                Delete unit <strong>&quot;{deleteUnitConfirm.unitNumber}&quot;</strong>? Rooms and beds in this unit may
+                need to be removed first if the database prevents deletion.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setDeleteUnitConfirm(null)}
+                  disabled={deletingUnit}
+                  className="px-4 py-2 text-gray-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteUnit}
+                  disabled={deletingUnit}
+                  className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deletingUnit ? 'Deleting…' : 'Delete unit'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {roomModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-xl">
@@ -585,8 +718,8 @@ export default function BuildingDetailPage() {
                   <input
                     type="text"
                     value={roomNumber}
-                    onChange={(e) => setRoomNumber(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
+                    onChange={(e) => setRoomNumber(e.target.value.toUpperCase())}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 uppercase text-gray-900 placeholder:text-gray-400"
                     placeholder="e.g. R1, R2"
                     required
                   />
@@ -614,8 +747,8 @@ export default function BuildingDetailPage() {
                   <input
                     type="text"
                     value={bedNumber}
-                    onChange={(e) => setBedNumber(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
+                    onChange={(e) => setBedNumber(e.target.value.toUpperCase())}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 uppercase text-gray-900 placeholder:text-gray-400"
                     placeholder={beds.length === 0 ? 'e.g. B1' : `e.g. B${beds.length + 1}`}
                     required
                   />
@@ -677,8 +810,8 @@ export default function BuildingDetailPage() {
                   <input
                     type="text"
                     value={editBedNumber}
-                    onChange={(e) => setEditBedNumber(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
+                    onChange={(e) => setEditBedNumber(e.target.value.toUpperCase())}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 uppercase text-gray-900 placeholder:text-gray-400"
                     required
                   />
                 </div>
@@ -764,8 +897,8 @@ export default function BuildingDetailPage() {
                   <input
                     type="text"
                     value={editRoomNumber}
-                    onChange={(e) => setEditRoomNumber(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
+                    onChange={(e) => setEditRoomNumber(e.target.value.toUpperCase())}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 uppercase text-gray-900 placeholder:text-gray-400"
                     required
                   />
                 </div>

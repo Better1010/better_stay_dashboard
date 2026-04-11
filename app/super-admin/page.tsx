@@ -1,157 +1,283 @@
 'use client';
 
 import DashboardLayout from '@/components/DashboardLayout';
-import { useEffect, useState } from 'react';
-import api from '@/lib/api';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import {
+  Building2,
+  UserCircle,
+  BedDouble,
+  DoorOpen,
+  ArrowRight,
+  Banknote,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+} from 'lucide-react';
+import api from '@/lib/api';
+import {
+  DashboardSpinner,
+  PageHeader,
+  Panel,
+  QuickActionCard,
+  StatCard,
+} from '@/components/dashboard/DashboardUi';
+
+type HostelRow = {
+  id?: string;
+  _id?: string;
+  name: string;
+  address?: string;
+  city?: string;
+  total_rooms?: number;
+  total_beds?: number;
+};
+
+function formatMoney(n: number) {
+  return `৳${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function monthYearLabel(month: number, year: number) {
+  return new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1));
+}
 
 export default function SuperAdminDashboard() {
-  const [stats, setStats] = useState({
-    totalHostels: 0,
-    totalAdmins: 0,
-    totalResidents: 0,
-    totalRevenue: 0,
-  });
-  const [hostels, setHostels] = useState<{ id?: string; _id?: string; name: string; address?: string; city?: string; total_rooms?: number; total_beds?: number }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hostels, setHostels] = useState<HostelRow[]>([]);
+  const [stats, setStats] = useState({
+    registeredUsers: 0,
+    totalRooms: 0,
+    totalBeds: 0,
+    totalIncome: 0,
+    totalInvestment: 0,
+    profit: 0,
+    analyticsMonth: 1,
+    analyticsYear: new Date().getFullYear(),
+  });
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([api.get('/hostels'), api.get('/users')])
-      .then(([hostelsRes, usersRes]) => {
+    (async () => {
+      try {
+        const [hostelsRes, regRes, analyticsRes, investmentsRes] = await Promise.all([
+          api.get('/hostels'),
+          api.get('/registered-users'),
+          api.get('/analytics'),
+          api.get('/investments'),
+        ]);
         if (cancelled) return;
-        const hostelsList = hostelsRes.data.hostels || [];
-        const users = usersRes.data.users || [];
+        const hostelsList: HostelRow[] = hostelsRes.data.hostels || [];
+        const registered = regRes.data.users || [];
+        const investments = investmentsRes.data.investments || [];
+        const totalInvestment = investments.reduce(
+          (s: number, row: { amount?: number }) => s + Number(row.amount || 0),
+          0,
+        );
+        const totalRooms = hostelsList.reduce((s, h) => s + Number(h.total_rooms ?? 0), 0);
+        const totalBeds = hostelsList.reduce((s, h) => s + Number(h.total_beds ?? 0), 0);
+        const a = analyticsRes.data || {};
         setHostels(hostelsList);
         setStats({
-          totalHostels: hostelsList.length,
-          totalAdmins: users.filter((u: { role?: string }) => u.role === 'hostel_admin').length,
-          totalResidents: users.filter((u: { role?: string }) => u.role === 'resident').length,
-          totalRevenue: 0,
+          registeredUsers: registered.length,
+          totalRooms,
+          totalBeds,
+          totalIncome: Number(a.totalIncome ?? 0),
+          totalInvestment,
+          profit: Number(a.profit ?? 0),
+          analyticsMonth: Number(a.month) || new Date().getMonth() + 1,
+          analyticsYear: Number(a.year) || new Date().getFullYear(),
         });
-      })
-      .catch((error) => {
-        if (!cancelled) console.error('Error fetching stats:', error);
-      })
-      .finally(() => {
+      } catch {
+        if (!cancelled) {
+          const now = new Date();
+          setHostels([]);
+          setStats({
+            registeredUsers: 0,
+            totalRooms: 0,
+            totalBeds: 0,
+            totalIncome: 0,
+            totalInvestment: 0,
+            profit: 0,
+            analyticsMonth: now.getMonth() + 1,
+            analyticsYear: now.getFullYear(),
+          });
+        }
+      } finally {
         if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const periodLabel = monthYearLabel(stats.analyticsMonth, stats.analyticsYear);
+  const { profit } = stats;
+  const profitIcon = profit > 0 ? TrendingUp : profit < 0 ? TrendingDown : Minus;
+  const profitIconClass =
+    profit > 0
+      ? 'bg-success/15 text-success'
+      : profit < 0
+        ? 'bg-destructive/10 text-destructive'
+        : 'bg-muted text-muted-foreground';
+  const profitLabel = profit > 0 ? 'Net profit' : profit < 0 ? 'Net loss' : 'Break-even';
 
   return (
     <DashboardLayout requiredRole={['super_admin']}>
-      <div>
-        <h2 className="text-3xl font-bold text-gray-900 mb-6">Super Admin Dashboard</h2>
+      <PageHeader
+        title="Dashboard"
+      />
 
-        {loading ? (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
+      {loading ? (
+        <DashboardSpinner label="Loading dashboard…" />
+      ) : (
+        <div className="space-y-8">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              label="Active buildings"
+              value={hostels.length}
+              sublabel="Hostels in operation"
+              icon={Building2}
+              iconWrapperClassName="bg-brand-muted text-brand-foreground"
+            />
+            <StatCard
+              label="Room & bed capacity"
+              value={`${stats.totalRooms} / ${stats.totalBeds}`}
+              sublabel="Rooms · Beds (all buildings)"
+              icon={BedDouble}
+            />
+            <StatCard
+              label="Registered users"
+              value={stats.registeredUsers}
+              sublabel="Clients on file for deposits & assignments"
+              icon={UserCircle}
+            />
+            <StatCard
+              label="Total income"
+              value={formatMoney(stats.totalIncome)}
+              sublabel={`Rent received · ${periodLabel}`}
+              icon={Banknote}
+              iconWrapperClassName="bg-primary/10 text-primary"
+            />
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-600 text-sm font-medium">Total Hostels</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">{stats.totalHostels}</p>
-                </div>
-                <span className="text-4xl">🏠</span>
-              </div>
-            </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-600 text-sm font-medium">Hostel Admins</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">{stats.totalAdmins}</p>
-                </div>
-                <span className="text-4xl">👥</span>
-              </div>
-            </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-600 text-sm font-medium">Total Residents</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">{stats.totalResidents}</p>
-                </div>
-                <span className="text-4xl">👤</span>
-              </div>
-            </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-600 text-sm font-medium">Total Revenue</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">৳{stats.totalRevenue}</p>
-                </div>
-                <span className="text-4xl">💰</span>
-              </div>
-            </div>
-          </div>
-        )}
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
-          <h3 className="text-xl font-semibold text-gray-900 mb-4">Hostels (Buildings)</h3>
-          {loading ? (
-            <p className="text-gray-500 text-sm">Loading...</p>
-          ) : hostels.length === 0 ? (
-            <p className="text-gray-500 text-sm">No hostels yet. Add your first building from Buildings.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Name</th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Address</th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Rooms / Beds</th>
-                    <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {hostels.map((h) => (
-                    <tr key={h.id || h._id}>
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900">{h.name}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500">{h.address}, {h.city}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500">{h.total_rooms ?? 0} rooms, {h.total_beds ?? 0} beds</td>
-                      <td className="px-4 py-3 text-right text-sm">
-                        <Link href={`/super-admin/hostels/${h.id || h._id}`} className="text-indigo-600 hover:text-indigo-900 font-medium">
-                          Manage units & rooms
-                        </Link>
-                      </td>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <StatCard
+              label="Total investment"
+              value={formatMoney(stats.totalInvestment)}
+              sublabel="All recorded investments to date"
+              icon={TrendingUp}
+              iconWrapperClassName="bg-brand-muted text-brand-foreground"
+            />
+            <StatCard
+              label="Buildings with units"
+              value={hostels.filter((h) => (h.total_rooms ?? 0) > 0).length}
+              sublabel="Buildings reporting at least one room"
+              icon={DoorOpen}
+            />
+            <StatCard
+              label={profitLabel}
+              value={formatMoney(Math.abs(profit))}
+              sublabel={periodLabel}
+              icon={profitIcon}
+              iconWrapperClassName={profitIconClass}
+            />
+          </div>
+
+          <Panel
+            title="Buildings overview"
+            action={
+              <Link
+                href="/super-admin/hostels"
+                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+              >
+                Manage all
+                <ArrowRight className="h-4 w-4" aria-hidden />
+              </Link>
+            }
+          >
+            {hostels.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No buildings yet. Add your first property from{' '}
+                <Link href="/super-admin/hostels" className="font-medium text-primary hover:underline">
+                  Hostels
+                </Link>
+                .
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="min-w-full divide-y divide-border text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Name
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Location
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Rooms / Beds
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Actions
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                  </thead>
+                  <tbody className="divide-y divide-border bg-card">
+                    {hostels.map((h) => {
+                      const id = String(h.id || h._id || '');
+                      return (
+                        <tr key={id} className="transition-colors hover:bg-muted/30">
+                          <td className="px-4 py-3 font-medium text-foreground">{h.name}</td>
+                          <td className="px-4 py-3 text-muted-foreground">
+                            {[h.address, h.city].filter(Boolean).join(', ') || '—'}
+                          </td>
+                          <td className="px-4 py-3 tabular-nums text-muted-foreground">
+                            {h.total_rooms ?? 0} rooms · {h.total_beds ?? 0} beds
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <Link
+                              href={`/super-admin/hostels/${id}`}
+                              className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                            >
+                              Units & rooms
+                              <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-xl font-semibold text-gray-900 mb-4">Quick Actions</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Link
-              href="/super-admin/hostels"
-              className="block p-4 border-2 border-gray-200 rounded-xl hover:border-yellow-400 hover:bg-gray-50 transition"
-            >
-              <h4 className="font-semibold text-gray-900">Manage Hostels</h4>
-              <p className="text-sm text-gray-600 mt-1">View and manage all hostels</p>
-            </Link>
-            <Link
-              href="/super-admin/admins"
-              className="block p-4 border-2 border-gray-200 rounded-xl hover:border-yellow-400 hover:bg-gray-50 transition"
-            >
-              <h4 className="font-semibold text-gray-900">Manage Admins</h4>
-              <p className="text-sm text-gray-600 mt-1">Create and manage hostel admins</p>
-            </Link>
-            <Link
-              href="/super-admin/reports"
-              className="block p-4 border-2 border-gray-200 rounded-xl hover:border-yellow-400 hover:bg-gray-50 transition"
-            >
-              <h4 className="font-semibold text-gray-900">View Reports</h4>
-              <p className="text-sm text-gray-600 mt-1">Revenue and occupancy reports</p>
-            </Link>
+          <div>
+            <h2 className="mb-4 text-base font-semibold text-foreground">Quick actions</h2>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <QuickActionCard
+                href="/super-admin/hostels"
+                title="Buildings & inventory"
+                description="Add buildings, units, rooms, and beds."
+                icon={Building2}
+              />
+              <QuickActionCard
+                href="/super-admin/register-user"
+                title="Register a client"
+                description="Capture NID and contact details for deposits and bed assignment."
+                icon={UserCircle}
+              />
+              <QuickActionCard
+                href="/super-admin/analytics"
+                title="Analytics"
+                description="Review performance and occupancy insights."
+                icon={TrendingUp}
+              />
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </DashboardLayout>
   );
 }

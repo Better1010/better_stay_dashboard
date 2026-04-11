@@ -40,7 +40,13 @@ export default function SuperAdminHostelsPage() {
   const handleAddBuilding = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post('/hostels', { name, address, city, phone, email });
+      await api.post('/hostels', {
+        name: name.trim().toUpperCase(),
+        address: address.trim().toUpperCase(),
+        city: city.trim().toUpperCase(),
+        phone: phone.trim(),
+        email: email.trim(),
+      });
       setShowAddModal(false);
       setName('');
       setAddress('');
@@ -179,15 +185,33 @@ export default function SuperAdminHostelsPage() {
               <form onSubmit={handleAddBuilding} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-900">Building name</label>
-                  <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400" required />
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value.toUpperCase())}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 uppercase text-gray-900 placeholder:text-gray-400"
+                    required
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-900">Address</label>
-                  <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400" required />
+                  <input
+                    type="text"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value.toUpperCase())}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 uppercase text-gray-900 placeholder:text-gray-400"
+                    required
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-900">City</label>
-                  <input type="text" value={city} onChange={(e) => setCity(e.target.value)} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400" required />
+                  <input
+                    type="text"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value.toUpperCase())}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 uppercase text-gray-900 placeholder:text-gray-400"
+                    required
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-900">Phone</label>

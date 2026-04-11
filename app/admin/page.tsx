@@ -1,8 +1,15 @@
 'use client';
 
 import DashboardLayout from '@/components/DashboardLayout';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { BedDouble, Users, MessageSquare, CreditCard } from 'lucide-react';
 import api from '@/lib/api';
+import {
+  DashboardSpinner,
+  PageHeader,
+  QuickActionCard,
+  StatCard,
+} from '@/components/dashboard/DashboardUi';
 
 export default function HostelAdminDashboard() {
   const [stats, setStats] = useState({
@@ -13,11 +20,8 @@ export default function HostelAdminDashboard() {
   });
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchStats();
-  }, []);
-
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
+    setLoading(true);
     try {
       const [roomsRes, usersRes, complaintsRes, paymentsRes] = await Promise.all([
         api.get('/rooms'),
@@ -33,101 +37,89 @@ export default function HostelAdminDashboard() {
 
       setStats({
         totalRooms: rooms.length,
-        totalResidents: users.filter((u: any) => u.role === 'resident').length,
-        pendingComplaints: complaints.filter((c: any) => c.status === 'pending').length,
-        pendingPayments: payments.filter((p: any) => p.status === 'pending').length,
+        totalResidents: users.filter((u: { role?: string }) => u.role === 'resident').length,
+        pendingComplaints: complaints.filter((c: { status?: string }) => c.status === 'pending').length,
+        pendingPayments: payments.filter((p: { status?: string }) => p.status === 'pending').length,
       });
-      setLoading(false);
-    } catch (error) {
-      console.error('Error fetching stats:', error);
+    } catch {
+      setStats({
+        totalRooms: 0,
+        totalResidents: 0,
+        pendingComplaints: 0,
+        pendingPayments: 0,
+      });
+    } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
 
   return (
     <DashboardLayout requiredRole={['hostel_admin']}>
-      <div>
-        <h2 className="text-3xl font-bold text-gray-900 mb-6">Hostel Admin Dashboard</h2>
+      <PageHeader
+        title="Dashboard"
+        description="Monitor rooms, residents, complaints, and payments for your property."
+      />
 
-        {loading ? (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+      {loading ? (
+        <DashboardSpinner />
+      ) : (
+        <div className="space-y-10">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard label="Total rooms" value={stats.totalRooms} icon={BedDouble} />
+            <StatCard label="Residents" value={stats.totalResidents} icon={Users} />
+            <StatCard
+              label="Pending complaints"
+              value={stats.pendingComplaints}
+              icon={MessageSquare}
+              iconWrapperClassName={stats.pendingComplaints > 0 ? 'bg-destructive/10 text-destructive' : undefined}
+            />
+            <StatCard
+              label="Pending payments"
+              value={stats.pendingPayments}
+              icon={CreditCard}
+              iconWrapperClassName={stats.pendingPayments > 0 ? 'bg-brand-muted text-brand-foreground' : undefined}
+            />
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <div className="bg-white p-6 rounded-lg shadow">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-600 text-sm">Total Rooms</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">{stats.totalRooms}</p>
-                </div>
-                <div className="text-4xl">🛏️</div>
-              </div>
-            </div>
-            <div className="bg-white p-6 rounded-lg shadow">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-600 text-sm">Residents</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">{stats.totalResidents}</p>
-                </div>
-                <div className="text-4xl">👤</div>
-              </div>
-            </div>
-            <div className="bg-white p-6 rounded-lg shadow">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-600 text-sm">Pending Complaints</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">{stats.pendingComplaints}</p>
-                </div>
-                <div className="text-4xl">📝</div>
-              </div>
-            </div>
-            <div className="bg-white p-6 rounded-lg shadow">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-600 text-sm">Pending Payments</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">{stats.pendingPayments}</p>
-                </div>
-                <div className="text-4xl">💳</div>
-              </div>
-            </div>
-          </div>
-        )}
 
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-xl font-semibold mb-4">Quick Actions</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <a
-              href="/admin/rooms"
-              className="p-4 border-2 border-gray-200 rounded-lg hover:border-blue-600 transition"
-            >
-              <h4 className="font-semibold">Manage Rooms</h4>
-              <p className="text-sm text-gray-600 mt-1">View and manage rooms & beds</p>
-            </a>
-            <a
-              href="/admin/residents"
-              className="p-4 border-2 border-gray-200 rounded-lg hover:border-blue-600 transition"
-            >
-              <h4 className="font-semibold">Manage Residents</h4>
-              <p className="text-sm text-gray-600 mt-1">Approve and manage residents</p>
-            </a>
-            <a
-              href="/admin/complaints"
-              className="p-4 border-2 border-gray-200 rounded-lg hover:border-blue-600 transition"
-            >
-              <h4 className="font-semibold">Handle Complaints</h4>
-              <p className="text-sm text-gray-600 mt-1">Review and resolve complaints</p>
-            </a>
-            <a
-              href="/admin/payments"
-              className="p-4 border-2 border-gray-200 rounded-lg hover:border-blue-600 transition"
-            >
-              <h4 className="font-semibold">Payment Management</h4>
-              <p className="text-sm text-gray-600 mt-1">Approve rent payments</p>
-            </a>
+          <div>
+            <h2 className="mb-4 text-base font-semibold text-foreground">Quick actions</h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <QuickActionCard
+                href="/admin/rooms"
+                title="Rooms & beds"
+                description="View and manage inventory."
+                icon={BedDouble}
+              />
+              <QuickActionCard
+                href="/admin/residents"
+                title="Residents"
+                description="Approve and manage resident accounts."
+                icon={Users}
+              />
+              <QuickActionCard
+                href="/admin/complaints"
+                title="Complaints"
+                description="Review and resolve open tickets."
+                icon={MessageSquare}
+              />
+              <QuickActionCard
+                href="/admin/payments"
+                title="Payments"
+                description="Approve rent and invoices."
+                icon={CreditCard}
+              />
+            </div>
           </div>
+
+          <p className="text-center text-xs text-muted-foreground">
+            Need another section? Use the sidebar — all tools stay one click away.
+          </p>
         </div>
-      </div>
+      )}
     </DashboardLayout>
   );
 }
