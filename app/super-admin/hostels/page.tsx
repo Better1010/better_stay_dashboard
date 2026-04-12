@@ -17,8 +17,9 @@ export default function SuperAdminHostelsPage() {
   const [hostels, setHostels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  // Delete building — disabled for now
+  // const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
+  // const [deleting, setDeleting] = useState(false);
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
@@ -59,19 +60,19 @@ export default function SuperAdminHostelsPage() {
     }
   };
 
-  const handleDeleteBuilding = async () => {
-    if (!deleteConfirm) return;
-    setDeleting(true);
-    try {
-      await api.delete(`/hostels/${deleteConfirm.id}`);
-      setDeleteConfirm(null);
-      fetchHostels();
-    } catch (err: unknown) {
-      alert(getErrorMessage(err, 'Failed to delete building'));
-    } finally {
-      setDeleting(false);
-    }
-  };
+  // const handleDeleteBuilding = async () => {
+  //   if (!deleteConfirm) return;
+  //   setDeleting(true);
+  //   try {
+  //     await api.delete(`/hostels/${deleteConfirm.id}`);
+  //     setDeleteConfirm(null);
+  //     fetchHostels();
+  //   } catch (err: unknown) {
+  //     alert(getErrorMessage(err, 'Failed to delete building'));
+  //   } finally {
+  //     setDeleting(false);
+  //   }
+  // };
 
   return (
     <DashboardLayout requiredRole={['super_admin']}>
@@ -81,7 +82,7 @@ export default function SuperAdminHostelsPage() {
           <button
             type="button"
             onClick={() => setShowAddModal(true)}
-            className="px-4 py-2 bg-black text-yellow-400 rounded-lg hover:bg-gray-900 transition font-medium"
+            className="rounded-lg bg-secondary px-4 py-2 font-medium text-secondary-foreground transition hover:bg-secondary/90"
           >
             + Add Building
           </button>
@@ -129,6 +130,7 @@ export default function SuperAdminHostelsPage() {
                           >
                             Manage units & rooms
                           </Link>
+                          {/* Delete disabled — restore with deleteConfirm state + handleDeleteBuilding + modal below
                           <button
                             type="button"
                             onClick={() =>
@@ -138,6 +140,7 @@ export default function SuperAdminHostelsPage() {
                           >
                             Delete
                           </button>
+                          */}
                         </div>
                       </td>
                     </tr>
@@ -148,35 +151,13 @@ export default function SuperAdminHostelsPage() {
           </div>
         </div>
 
+        {/* Delete building modal — disabled; pair with deleteConfirm state and handleDeleteBuilding above
         {deleteConfirm && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-xl">
-              <h4 className="text-lg font-semibold mb-2 text-gray-900">Delete building</h4>
-              <p className="text-sm text-gray-600 mb-4">
-                Delete <strong>&quot;{deleteConfirm.name}&quot;</strong>? This permanently removes all units, rooms,
-                beds, and related records for this building. This cannot be undone.
-              </p>
-              <div className="flex gap-2 justify-end">
-                <button
-                  type="button"
-                  onClick={() => setDeleteConfirm(null)}
-                  disabled={deleting}
-                  className="px-4 py-2 text-gray-600"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDeleteBuilding}
-                  disabled={deleting}
-                  className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-                >
-                  {deleting ? 'Deleting…' : 'Delete building'}
-                </button>
-              </div>
-            </div>
+            ...
           </div>
         )}
+        */}
 
         {showAddModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -223,7 +204,7 @@ export default function SuperAdminHostelsPage() {
                 </div>
                 <div className="flex gap-2 justify-end">
                   <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 text-gray-600">Cancel</button>
-                  <button type="submit" className="px-4 py-2 bg-black text-yellow-400 rounded-lg">Add</button>
+                  <button type="submit" className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90">Add</button>
                 </div>
               </form>
             </div>

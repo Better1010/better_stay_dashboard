@@ -61,25 +61,27 @@ export default function LoginPage() {
       <div className="grid min-h-screen lg:grid-cols-[1.15fr_1fr]">
         <section className="relative hidden overflow-hidden bg-gradient-to-br from-primary to-primary/85 lg:block">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.22),transparent_45%),radial-gradient(circle_at_80%_80%,rgba(236,115,98,0.20),transparent_40%)]" />
-          <div className="relative z-10 flex h-full flex-col justify-between p-10 xl:p-14">
-            <Image
-              src="/images/LOGO.png"
-              alt="BetterStay logo"
-              width={320}
-              height={80}
-              priority
-              className="h-auto w-[240px] rounded-xl bg-white/90 p-3 shadow-lg xl:w-[300px]"
-            />
-            <div className="max-w-lg text-white">
-              <p className="mb-4 inline-flex rounded-full bg-white/20 px-3 py-1 text-xs font-medium tracking-wide uppercase">
-                Property Management Platform
-              </p>
-              <h1 className="text-4xl font-bold leading-tight xl:text-5xl">
-                Manage operations with confidence.
-              </h1>
-              <p className="mt-4 text-sm leading-relaxed text-white/90 xl:text-base">
-                Streamline expenses, maintenance, and resident workflows in one secure dashboard designed for modern teams.
-              </p>
+          <div className="relative z-10 flex h-full flex-col items-center justify-center p-10 xl:p-14">
+            <div className="flex max-w-lg flex-col items-center text-center">
+              <Image
+                src="/images/LOGO.png"
+                alt="BetterStay logo"
+                width={320}
+                height={80}
+                priority
+                className="mb-10 h-auto w-[240px] rounded-xl bg-white/90 p-3 shadow-lg xl:mb-12 xl:w-[300px]"
+              />
+              <div className="text-white">
+                <p className="mb-4 inline-flex rounded-full bg-white/20 px-3 py-1 text-xs font-medium tracking-wide uppercase">
+                  Property Management Platform
+                </p>
+                <h1 className="text-4xl font-bold leading-tight xl:text-5xl">
+                  Manage operations with confidence.
+                </h1>
+                <p className="mt-4 text-sm leading-relaxed text-white/90 xl:text-base">
+                  Streamline expenses, maintenance, and resident workflows in one secure dashboard designed for modern teams.
+                </p>
+              </div>
             </div>
           </div>
         </section>
@@ -149,7 +151,7 @@ export default function LoginPage() {
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="h-11 w-full rounded-lg bg-primary text-sm font-semibold text-white hover:bg-primary/90"
+                  className="h-11 w-full rounded-lg bg-secondary text-sm font-semibold text-secondary-foreground hover:bg-secondary/90"
                 >
                   {loading ? 'Signing in...' : 'Sign in to dashboard'}
                 </Button>

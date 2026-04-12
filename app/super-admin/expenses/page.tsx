@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import api from '@/lib/api';
 
 const editActionButtonClass =
-  'rounded-md bg-blue-600 px-2.5 py-1 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1';
+  'border-0 bg-transparent p-0 text-sm font-medium text-secondary shadow-none hover:text-secondary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary/35 focus-visible:ring-offset-0';
 
 type Category = { id: string; name: string };
 type Building = { id: string; name: string };
@@ -354,7 +354,7 @@ export default function SuperAdminExpensesPage() {
                 placeholder="e.g. Maintenance, Utilities"
               />
             </div>
-            <button type="submit" className="rounded-xl bg-primary px-5 py-2.5 font-medium text-white transition hover:bg-primary/90">
+            <button type="submit" className="rounded-xl bg-secondary px-5 py-2.5 font-medium text-secondary-foreground transition hover:bg-secondary/90">
               Add Category
             </button>
           </form>
@@ -447,7 +447,7 @@ export default function SuperAdminExpensesPage() {
               />
             </div>
             <div className="flex items-end md:col-span-2 lg:col-span-1">
-              <button type="submit" className="w-full rounded-xl bg-primary px-4 py-2.5 font-medium text-white transition hover:bg-primary/90 lg:w-auto">
+              <button type="submit" className="w-full rounded-xl bg-secondary px-4 py-2.5 font-medium text-secondary-foreground transition hover:bg-secondary/90 lg:w-auto">
                 Add Expense
               </button>
             </div>
@@ -709,7 +709,7 @@ export default function SuperAdminExpensesPage() {
                 </div>
                 <div className="flex gap-2 justify-end">
                   <button type="button" onClick={() => setEditExpense(null)} className="px-4 py-2 text-gray-600">Cancel</button>
-                  <button type="submit" className="rounded-xl bg-primary px-4 py-2 text-white hover:bg-primary/90">Save</button>
+                  <button type="submit" className="rounded-xl bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90">Save</button>
                 </div>
               </form>
             </div>
@@ -737,7 +737,7 @@ export default function SuperAdminExpensesPage() {
                   type="button"
                   onClick={handleDeleteExpense}
                   disabled={deleting}
-                  className="rounded-lg bg-red-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-lg bg-secondary px-4 py-2 font-medium text-secondary-foreground shadow-sm hover:bg-secondary/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {deleting ? 'Deleting...' : 'Delete'}
                 </button>

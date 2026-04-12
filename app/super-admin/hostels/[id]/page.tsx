@@ -8,7 +8,7 @@ import api from '@/lib/api';
 import { uploadBedPicture } from '@/lib/supabase';
 
 const editActionButtonClass =
-  'rounded-md bg-blue-600 px-2.5 py-1 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1';
+  'border-0 bg-transparent p-0 text-sm font-medium text-secondary shadow-none hover:text-secondary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary/35 focus-visible:ring-offset-0';
 
 export default function BuildingDetailPage() {
   const params = useParams();
@@ -29,8 +29,6 @@ export default function BuildingDetailPage() {
   const [editUnitModal, setEditUnitModal] = useState<{ id: string; unitNumber: string; floor: number } | null>(null);
   const [editUnitNumber, setEditUnitNumber] = useState('');
   const [editUnitFloor, setEditUnitFloor] = useState(1);
-  const [deleteUnitConfirm, setDeleteUnitConfirm] = useState<{ id: string; unitNumber: string } | null>(null);
-  const [deletingUnit, setDeletingUnit] = useState(false);
   const [roomModal, setRoomModal] = useState(false);
   const [bedModal, setBedModal] = useState(false);
   const [assignModal, setAssignModal] = useState<{ bedId: string; bedNumber: string } | null>(null);
@@ -142,25 +140,6 @@ export default function BuildingDetailPage() {
       refreshUnits();
     } catch (err: any) {
       alert(err.response?.data?.message || 'Failed to update unit');
-    }
-  };
-
-  const handleDeleteUnit = async () => {
-    if (!deleteUnitConfirm) return;
-    setDeletingUnit(true);
-    try {
-      await api.delete(`/units/${deleteUnitConfirm.id}`);
-      if (selectedUnitId === deleteUnitConfirm.id) {
-        setSelectedUnitId(null);
-        setSelectedRoomId(null);
-        setViewStep('units');
-      }
-      setDeleteUnitConfirm(null);
-      refreshUnits();
-    } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to delete unit');
-    } finally {
-      setDeletingUnit(false);
     }
   };
 
@@ -356,7 +335,7 @@ export default function BuildingDetailPage() {
               <button
                 type="button"
                 onClick={() => setUnitModal(true)}
-                className="px-3 py-1.5 bg-black text-yellow-400 rounded-lg hover:bg-gray-800 text-sm font-medium"
+                className="rounded-lg bg-secondary px-3 py-1.5 text-sm font-medium text-secondary-foreground hover:bg-secondary/90"
               >
                 + Add Unit
               </button>
@@ -388,15 +367,6 @@ export default function BuildingDetailPage() {
                             <div className="flex flex-wrap items-center justify-end gap-2">
                               <button type="button" onClick={() => openEditUnit(u)} className={editActionButtonClass}>
                                 Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setDeleteUnitConfirm({ id: String(uid), unitNumber: String(u.unitNumber || 'Unit') })
-                                }
-                                className="text-red-600 hover:text-red-800 text-sm font-medium"
-                              >
-                                Delete
                               </button>
                               <button
                                 type="button"
@@ -441,7 +411,7 @@ export default function BuildingDetailPage() {
               <button
                 type="button"
                 onClick={() => setRoomModal(true)}
-                className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium"
+                className="rounded-lg bg-secondary px-3 py-1.5 text-sm font-medium text-secondary-foreground hover:bg-secondary/90"
               >
                 + Add Room
               </button>
@@ -513,7 +483,7 @@ export default function BuildingDetailPage() {
               <button
                 type="button"
                 onClick={() => setBedModal(true)}
-                className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"
+                className="rounded-lg bg-secondary px-3 py-1.5 text-sm font-medium text-secondary-foreground hover:bg-secondary/90"
               >
                 + Add Bed
               </button>
@@ -579,7 +549,7 @@ export default function BuildingDetailPage() {
                             <button
                               type="button"
                               onClick={() => handleUnassign(b.id)}
-                              className="text-red-600 hover:text-red-800 text-sm font-medium"
+                              className="text-sm font-medium text-secondary hover:text-secondary/80"
                             >
                               Unassign
                             </button>
@@ -631,7 +601,7 @@ export default function BuildingDetailPage() {
                   <button type="button" onClick={() => setUnitModal(false)} className="px-4 py-2 text-gray-600">
                     Cancel
                   </button>
-                  <button type="submit" className="px-4 py-2 bg-black text-yellow-400 rounded-lg">
+                  <button type="submit" className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90">
                     Add
                   </button>
                 </div>
@@ -669,41 +639,11 @@ export default function BuildingDetailPage() {
                   <button type="button" onClick={() => setEditUnitModal(null)} className="px-4 py-2 text-gray-600">
                     Cancel
                   </button>
-                  <button type="submit" className="px-4 py-2 bg-black text-yellow-400 rounded-lg">
+                  <button type="submit" className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90">
                     Save
                   </button>
                 </div>
               </form>
-            </div>
-          </div>
-        )}
-
-        {deleteUnitConfirm && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-xl">
-              <h4 className="text-lg font-semibold mb-2 text-gray-900">Delete unit</h4>
-              <p className="text-sm text-gray-600 mb-4">
-                Delete unit <strong>&quot;{deleteUnitConfirm.unitNumber}&quot;</strong>? Rooms and beds in this unit may
-                need to be removed first if the database prevents deletion.
-              </p>
-              <div className="flex gap-2 justify-end">
-                <button
-                  type="button"
-                  onClick={() => setDeleteUnitConfirm(null)}
-                  disabled={deletingUnit}
-                  className="px-4 py-2 text-gray-600"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDeleteUnit}
-                  disabled={deletingUnit}
-                  className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-                >
-                  {deletingUnit ? 'Deleting…' : 'Delete unit'}
-                </button>
-              </div>
             </div>
           </div>
         )}
@@ -728,7 +668,7 @@ export default function BuildingDetailPage() {
                   <button type="button" onClick={() => setRoomModal(false)} className="px-4 py-2 text-gray-600">
                     Cancel
                   </button>
-                  <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg">
+                  <button type="submit" className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90">
                     Add
                   </button>
                 </div>
@@ -791,7 +731,7 @@ export default function BuildingDetailPage() {
                   <button type="button" onClick={() => { setBedModal(false); setBedPictureFile(null); }} className="px-4 py-2 text-gray-600">
                     Cancel
                   </button>
-                  <button type="submit" disabled={uploading} className="px-4 py-2 bg-green-600 text-white rounded-lg disabled:opacity-50">
+                  <button type="submit" disabled={uploading} className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90 disabled:opacity-50">
                     {uploading ? 'Uploading...' : 'Add'}
                   </button>
                 </div>
@@ -857,7 +797,7 @@ export default function BuildingDetailPage() {
                       <button
                         type="button"
                         onClick={() => setEditBedPictureUrl('')}
-                        className="text-red-600 hover:text-red-800 text-xs font-medium"
+                        className="text-xs font-medium text-secondary hover:text-secondary/80"
                       >
                         Remove
                       </button>
@@ -878,7 +818,7 @@ export default function BuildingDetailPage() {
                   <button type="button" onClick={() => { setEditBedModal(null); setEditBedPictureFile(null); }} className="px-4 py-2 text-gray-600">
                     Cancel
                   </button>
-                  <button type="submit" disabled={uploading} className="px-4 py-2 bg-black text-yellow-400 rounded-lg disabled:opacity-50">
+                  <button type="submit" disabled={uploading} className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90 disabled:opacity-50">
                     {uploading ? 'Uploading...' : 'Save'}
                   </button>
                 </div>
@@ -916,7 +856,7 @@ export default function BuildingDetailPage() {
                   <button type="button" onClick={() => setEditRoomModal(null)} className="px-4 py-2 text-gray-600">
                     Cancel
                   </button>
-                  <button type="submit" className="px-4 py-2 bg-black text-yellow-400 rounded-lg">
+                  <button type="submit" className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90">
                     Save
                   </button>
                 </div>
@@ -959,7 +899,7 @@ export default function BuildingDetailPage() {
                   >
                     Cancel
                   </button>
-                  <button type="submit" disabled={uploading} className="px-4 py-2 bg-indigo-600 text-white rounded-lg disabled:opacity-50">
+                  <button type="submit" disabled={uploading} className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90 disabled:opacity-50">
                     {uploading ? 'Uploading...' : 'Assign'}
                   </button>
                 </div>

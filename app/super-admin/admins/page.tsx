@@ -10,7 +10,7 @@ export default function SuperAdminAdminsPage() {
           <h2 className="text-3xl font-bold text-gray-900">Hostel Admins</h2>
           <button
             type="button"
-            className="px-4 py-2 bg-black text-yellow-400 rounded-lg hover:bg-gray-900 transition font-medium"
+            className="rounded-lg bg-secondary px-4 py-2 font-medium text-secondary-foreground transition hover:bg-secondary/90"
           >
             + Add Admin
           </button>

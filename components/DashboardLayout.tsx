@@ -64,7 +64,7 @@ export default function DashboardLayout({ children, requiredRole }: DashboardLay
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <span
                 className={cn(
-                  'inline-flex items-center rounded-md border border-border bg-green-500 px-2.5 py-1 text-xs font-medium text-zinc-900',
+                  'inline-flex items-center rounded-md border border-transparent bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground',
                 )}
               >
                 {roleLabels[user.role]}
@@ -72,7 +72,7 @@ export default function DashboardLayout({ children, requiredRole }: DashboardLay
               <button
                 type="button"
                 onClick={logout}
-                className="inline-flex items-center gap-2 rounded-lg border border-border bg-red-500 px-3 py-2 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="inline-flex items-center gap-2 rounded-lg border border-transparent bg-secondary px-3 py-2 text-sm font-medium text-secondary-foreground shadow-sm transition-colors hover:bg-secondary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <LogOut className="h-4 w-4" aria-hidden />
                 Log out

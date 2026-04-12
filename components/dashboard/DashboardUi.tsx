@@ -34,6 +34,8 @@ type StatCardProps = {
   icon: LucideIcon;
   className?: string;
   iconWrapperClassName?: string;
+  /** When set, the whole card is a link to this path. */
+  href?: string;
 };
 
 export function StatCard({
@@ -43,14 +45,10 @@ export function StatCard({
   icon: Icon,
   className,
   iconWrapperClassName,
+  href,
 }: StatCardProps) {
-  return (
-    <div
-      className={cn(
-        'rounded-xl border border-border bg-card p-5 shadow-sm transition-shadow hover:shadow-md',
-        className,
-      )}
-    >
+  const inner = (
+    <>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-muted-foreground">{label}</p>
@@ -68,8 +66,26 @@ export function StatCard({
           <Icon className="h-5 w-5" strokeWidth={1.75} aria-hidden />
         </div>
       </div>
-    </div>
+    </>
   );
+
+  const shellClass = cn(
+    'rounded-xl border border-border bg-card p-5 shadow-sm transition-all',
+    href
+      ? 'cursor-pointer hover:border-primary/25 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
+      : 'hover:shadow-md',
+    className,
+  );
+
+  if (href) {
+    return (
+      <Link href={href} className={cn(shellClass, 'block no-underline')}>
+        {inner}
+      </Link>
+    );
+  }
+
+  return <div className={shellClass}>{inner}</div>;
 }
 
 type QuickActionCardProps = {

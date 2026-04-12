@@ -122,6 +122,14 @@ export default function SuperAdminDashboard() {
         : 'bg-muted text-muted-foreground';
   const profitLabel = profit > 0 ? 'Net profit' : profit < 0 ? 'Net loss' : 'Break-even';
 
+  const firstHostelWithRooms = hostels.find((h) => Number(h.total_rooms ?? 0) > 0);
+  const firstHostelId = firstHostelWithRooms
+    ? String(firstHostelWithRooms.id || firstHostelWithRooms._id || '')
+    : hostels[0]
+      ? String(hostels[0].id || hostels[0]._id || '')
+      : '';
+  const unitsPageHref = firstHostelId ? `/super-admin/hostels/${firstHostelId}` : '/super-admin/hostels';
+
   return (
     <DashboardLayout requiredRole={['super_admin']}>
       <PageHeader
@@ -139,18 +147,21 @@ export default function SuperAdminDashboard() {
               sublabel="Hostels in operation"
               icon={Building2}
               iconWrapperClassName="bg-brand-muted text-brand-foreground"
+              href="/super-admin/hostels"
             />
             <StatCard
               label="Room & bed capacity"
               value={`${stats.totalRooms} / ${stats.totalBeds}`}
               sublabel="Rooms · Beds (all buildings)"
               icon={BedDouble}
+              href={unitsPageHref}
             />
             <StatCard
               label="Registered users"
               value={stats.registeredUsers}
               sublabel="Clients on file for deposits & assignments"
               icon={UserCircle}
+              href="/super-admin/register-user"
             />
             <StatCard
               label="Total income"
@@ -158,6 +169,7 @@ export default function SuperAdminDashboard() {
               sublabel={`Rent received · ${periodLabel}`}
               icon={Banknote}
               iconWrapperClassName="bg-primary/10 text-primary"
+              href="/super-admin/income"
             />
           </div>
 
@@ -168,12 +180,14 @@ export default function SuperAdminDashboard() {
               sublabel="All recorded investments to date"
               icon={TrendingUp}
               iconWrapperClassName="bg-brand-muted text-brand-foreground"
+              href="/super-admin/investment"
             />
             <StatCard
               label="Buildings with units"
               value={hostels.filter((h) => (h.total_rooms ?? 0) > 0).length}
               sublabel="Buildings reporting at least one room"
               icon={DoorOpen}
+              href={unitsPageHref}
             />
             <StatCard
               label={profitLabel}

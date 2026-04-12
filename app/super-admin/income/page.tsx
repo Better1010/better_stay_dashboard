@@ -399,7 +399,7 @@ export default function SuperAdminIncomePage() {
                   <button
                     type="submit"
                     disabled={paying || isSelectedMonthPaid}
-                    className="px-4 py-2 bg-black text-yellow-400 rounded-lg disabled:opacity-50"
+                    className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90 disabled:opacity-50"
                   >
                     {paying ? 'Saving...' : isSelectedMonthPaid ? 'Paid' : 'Pay'}
                   </button>

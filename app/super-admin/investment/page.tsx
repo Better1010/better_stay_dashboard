@@ -5,7 +5,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import api from '@/lib/api';
 
 const editActionButtonClass =
-  'rounded-md bg-blue-600 px-2.5 py-1 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1';
+  'border-0 bg-transparent p-0 text-sm font-medium text-secondary shadow-none hover:text-secondary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary/35 focus-visible:ring-offset-0';
 
 type InvestmentRow = {
   id: string;
@@ -232,7 +232,7 @@ export default function InvestmentPage() {
               <button
                 type="submit"
                 disabled={saving}
-                className="px-4 py-2 bg-black text-yellow-400 rounded-lg hover:bg-gray-900 disabled:opacity-50"
+                className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90 disabled:opacity-50"
               >
                 {saving ? 'Adding...' : 'Add'}
               </button>
@@ -341,7 +341,7 @@ export default function InvestmentPage() {
                   <button
                     type="submit"
                     disabled={editSaving}
-                    className="px-4 py-2 bg-black text-yellow-400 rounded-lg hover:bg-gray-900 disabled:opacity-50"
+                    className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90 disabled:opacity-50"
                   >
                     {editSaving ? 'Saving...' : 'Save'}
                   </button>

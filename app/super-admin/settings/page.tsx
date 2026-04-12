@@ -49,7 +49,7 @@ export default function SuperAdminSettingsPage() {
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Save changes</h3>
             <button
               type="button"
-              className="px-4 py-2 bg-black text-yellow-400 rounded-lg hover:bg-gray-900 transition font-medium"
+              className="rounded-lg bg-secondary px-4 py-2 font-medium text-secondary-foreground transition hover:bg-secondary/90"
             >
               Save settings
             </button>
