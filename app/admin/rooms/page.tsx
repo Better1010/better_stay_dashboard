@@ -199,7 +199,7 @@ export default function AdminRoomsPage() {
             <button
               type="button"
               onClick={() => setUnitModal(true)}
-              className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+              className="rounded-lg bg-secondary px-3 py-1.5 text-sm font-medium text-secondary-foreground hover:bg-secondary/90"
             >
               + Add Unit
             </button>
@@ -374,7 +374,7 @@ export default function AdminRoomsPage() {
                 </div>
                 <div className="flex gap-2 justify-end">
                   <button type="button" onClick={() => setUnitModal(false)} className="px-4 py-2 text-gray-600">Cancel</button>
-                  <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg">Add</button>
+                  <button type="submit" className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90">Add</button>
                 </div>
               </form>
             </div>
@@ -443,7 +443,7 @@ export default function AdminRoomsPage() {
                 </div>
                 <div className="flex gap-2 justify-end">
                   <button type="button" onClick={() => { setAssignModal(null); setAssigneeName(''); }} className="px-4 py-2 text-gray-600">Cancel</button>
-                  <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg">Assign</button>
+                  <button type="submit" className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90">Assign</button>
                 </div>
               </form>
             </div>

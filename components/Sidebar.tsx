@@ -114,7 +114,7 @@ export default function Sidebar({ role }: SidebarProps) {
       <div className="border-b border-sidebar-border">
         <Link
           href={dashboardPathByRole[role]}
-          className="block bg-black px-4 py-5 transition-opacity hover:opacity-95"
+          className="block bg-white px-4 py-5 transition-opacity hover:opacity-95"
         >
           <Image
             src="/images/LOGO.png"

@@ -1493,15 +1493,85 @@ const getDeposits = async (queryParams?: { search?: string }): Promise<ApiRespon
     userIds.length > 0
       ? await supabase
           .from('registered_users')
-          .select('id, name, mobile_number')
+          .select('id, name, mobile_number, nid_picture_front_url, nid_picture_back_url, created_at')
           .in('id', userIds)
       : ({ data: [], error: null } as any);
   throwIfError(usersRes.error, 'Failed to load registered users');
   const usersById = new Map<string, any>((usersRes.data || []).map((u: any) => [u.id, u]));
 
+  type AssignmentLoc = { buildingName: string; unitNumber: string; roomNumber: string; bedNumber: string };
+  const locationsByUserId = new Map<string, AssignmentLoc[]>();
+
+  const assignRes =
+    userIds.length > 0
+      ? await supabase
+          .from('bed_assignments')
+          .select('bed_id, registered_user_id')
+          .in('registered_user_id', userIds)
+          .is('ended_at', null)
+      : ({ data: [], error: null } as any);
+  throwIfError(assignRes.error, 'Failed to load bed assignments for deposits');
+
+  const assignments = assignRes.data || [];
+  const bedIds = Array.from(new Set(assignments.map((a: any) => a.bed_id).filter(Boolean)));
+
+  if (bedIds.length > 0) {
+    const bedsRes = await supabase.from('beds').select('id, bed_number, room_id').in('id', bedIds);
+    throwIfError(bedsRes.error, 'Failed to load beds for deposits');
+    const beds = bedsRes.data || [];
+    const roomIds = Array.from(new Set(beds.map((b: any) => b.room_id).filter(Boolean)));
+
+    const roomsRes =
+      roomIds.length > 0
+        ? await supabase.from('rooms').select('id, room_number, unit_id, hostel_id').in('id', roomIds)
+        : ({ data: [], error: null } as any);
+    throwIfError(roomsRes.error, 'Failed to load rooms for deposits');
+    const rooms = roomsRes.data || [];
+    const unitIds = Array.from(new Set(rooms.map((r: any) => r.unit_id).filter(Boolean)));
+    const hostelIds = Array.from(new Set(rooms.map((r: any) => r.hostel_id).filter(Boolean)));
+
+    const unitsRes =
+      unitIds.length > 0
+        ? await supabase.from('units').select('id, unit_number').in('id', unitIds)
+        : ({ data: [], error: null } as any);
+    const hostelsRes =
+      hostelIds.length > 0
+        ? await supabase.from('hostels').select('id, name').in('id', hostelIds)
+        : ({ data: [], error: null } as any);
+    throwIfError(unitsRes.error, 'Failed to load units for deposits');
+    throwIfError(hostelsRes.error, 'Failed to load hostels for deposits');
+
+    const roomById = new Map<string, any>(rooms.map((r: any) => [r.id, r]));
+    const unitById = new Map<string, any>((unitsRes.data || []).map((u: any) => [u.id, u]));
+    const hostelById = new Map<string, any>((hostelsRes.data || []).map((h: any) => [h.id, h]));
+    const bedById = new Map<string, any>(beds.map((b: any) => [b.id, b]));
+
+    for (const a of assignments) {
+      const bed = bedById.get(a.bed_id);
+      if (!bed) continue;
+      const room = roomById.get(bed.room_id);
+      if (!room) continue;
+      const unit = room.unit_id ? unitById.get(room.unit_id) : null;
+      const hostel = room.hostel_id ? hostelById.get(room.hostel_id) : null;
+      const loc: AssignmentLoc = {
+        buildingName: hostel?.name || '',
+        unitNumber: unit?.unit_number || '—',
+        roomNumber: room.room_number || '',
+        bedNumber: bed.bed_number || '',
+      };
+      const uid = a.registered_user_id;
+      const list = locationsByUserId.get(uid) || [];
+      list.push(loc);
+      locationsByUserId.set(uid, list);
+    }
+  }
+
   const rows = deposits
     .map((d: any) => {
       const user = usersById.get(d.registered_user_id);
+      const assignmentLocations = locationsByUserId.get(d.registered_user_id) || [];
+      const bedAssignmentStatus = assignmentLocations.length > 0 ? 'assigned' : 'unassigned';
+
       return {
         id: d.id,
         registeredUserId: d.registered_user_id,
@@ -1509,6 +1579,18 @@ const getDeposits = async (queryParams?: { search?: string }): Promise<ApiRespon
         mobileNumber: user?.mobile_number || '',
         amount: Number(d.amount || 0),
         createdAt: d.created_at,
+        bedAssignmentStatus,
+        assignmentLocations,
+        userDetail: user
+          ? {
+              id: user.id,
+              name: user.name,
+              mobileNumber: user.mobile_number ?? '',
+              nidFrontUrl: user.nid_picture_front_url ?? '',
+              nidBackUrl: user.nid_picture_back_url ?? '',
+              createdAt: user.created_at,
+            }
+          : null,
       };
     })
     .filter((row: any) => (search ? row.clientName.toLowerCase().includes(search) : true));
@@ -1521,6 +1603,7 @@ const createDeposit = async (payload: any): Promise<ApiResponse> => {
   const current = requireAuthUser();
   const registeredUserId = payload?.registeredUserId ? String(payload.registeredUserId) : '';
   const amount = Number(payload?.amount);
+
   if (!registeredUserId) throw new ApiRequestError(400, 'registeredUserId is required');
   if (!Number.isFinite(amount) || amount <= 0) throw new ApiRequestError(400, 'Valid amount is required');
 
