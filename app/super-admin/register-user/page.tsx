@@ -63,8 +63,9 @@ export default function RegisterUserPage() {
     window.setTimeout(() => setToast(null), 3000);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const form = e.currentTarget;
     if (!nidFrontFile || !nidBackFile) {
       showToast('error', 'NID front and back pictures are required.');
       return;
@@ -86,6 +87,7 @@ export default function RegisterUserPage() {
       setMobileNumber('');
       setNidFrontFile(null);
       setNidBackFile(null);
+      form.reset();
       showToast('success', 'User registered successfully.');
       fetchUsers();
     } catch (err: any) {

@@ -70,11 +70,15 @@ export default function DepositPage() {
   const [loading, setLoading] = useState(true);
   const [addModal, setAddModal] = useState(false);
   const [detailDeposit, setDetailDeposit] = useState<DepositRow | null>(null);
+  const [editDeposit, setEditDeposit] = useState<DepositRow | null>(null);
 
   const [selectedRegisteredUserId, setSelectedRegisteredUserId] = useState('');
   const [amount, setAmount] = useState('');
   const [saving, setSaving] = useState(false);
   const [clientsLoading, setClientsLoading] = useState(false);
+  const [editRegisteredUserId, setEditRegisteredUserId] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
 
   const fetchRegisteredUsers = async () => {
     try {
@@ -128,9 +132,26 @@ export default function DepositPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addModal]);
 
+  useEffect(() => {
+    if (!editDeposit) return;
+    setClientsLoading(true);
+    fetchRegisteredUsers()
+      .then((list) => {
+        setEditRegisteredUserId((prev) => (prev && list.some((u) => u.id === prev) ? prev : editDeposit.registeredUserId));
+      })
+      .finally(() => setClientsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editDeposit]);
+
   const resetAddForm = () => {
     setSelectedRegisteredUserId('');
     setAmount('');
+  };
+
+  const resetEditForm = () => {
+    setEditDeposit(null);
+    setEditRegisteredUserId('');
+    setEditAmount('');
   };
 
   const handleAddDeposit = async (e: React.FormEvent) => {
@@ -149,6 +170,30 @@ export default function DepositPage() {
       alert(getErrorMessage(err, 'Failed to add deposit'));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const openEditDeposit = (deposit: DepositRow) => {
+    setEditDeposit(deposit);
+    setEditRegisteredUserId(deposit.registeredUserId);
+    setEditAmount(String(deposit.amount));
+  };
+
+  const handleEditDeposit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editDeposit || !editRegisteredUserId || !editAmount) return;
+    try {
+      setEditSaving(true);
+      await api.patch(`/deposits/${editDeposit.id}`, {
+        registeredUserId: editRegisteredUserId,
+        amount: Number(editAmount),
+      });
+      resetEditForm();
+      fetchData(search);
+    } catch (err: unknown) {
+      alert(getErrorMessage(err, 'Failed to update deposit'));
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -196,27 +241,30 @@ export default function DepositPage() {
             <table className="min-w-full table-fixed divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="w-2/5 px-4 py-3 text-left text-xs font-semibold tracking-wide text-gray-600 uppercase">
+                  <th className="w-[32%] px-4 py-3 text-left text-xs font-semibold tracking-wide text-gray-600 uppercase">
                     Client
                   </th>
-                  <th className="w-2/5 px-4 py-3 text-left text-xs font-semibold tracking-wide text-gray-600 uppercase">
+                  <th className="w-[28%] px-4 py-3 text-left text-xs font-semibold tracking-wide text-gray-600 uppercase">
                     Mobile
                   </th>
-                  <th className="w-1/5 px-4 py-3 text-right text-xs font-semibold tracking-wide text-gray-600 uppercase">
+                  <th className="w-[18%] px-4 py-3 text-right text-xs font-semibold tracking-wide text-gray-600 uppercase">
                     Amount
+                  </th>
+                  <th className="w-[22%] px-4 py-3 text-right text-xs font-semibold tracking-wide text-gray-600 uppercase">
+                    Actions
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 bg-white">
                 {loading ? (
                   <tr>
-                    <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
                       Loading...
                     </td>
                   </tr>
                 ) : deposits.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
                       No deposits found.
                     </td>
                   </tr>
@@ -239,6 +287,18 @@ export default function DepositPage() {
                       <td className="truncate px-4 py-3 text-sm text-gray-700">{d.mobileNumber || '—'}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-medium text-gray-700">
                         ৳{Number(d.amount).toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditDeposit(d);
+                          }}
+                          className="text-sm font-medium text-secondary hover:text-secondary/80"
+                        >
+                          Edit
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -308,6 +368,70 @@ export default function DepositPage() {
                     className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90 disabled:opacity-50"
                   >
                     {saving ? 'Saving...' : 'Add'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {editDeposit && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+              <h4 className="mb-4 text-lg font-semibold text-gray-900">Edit Deposit</h4>
+              <form onSubmit={handleEditDeposit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">Registered client</label>
+                  <select
+                    value={editRegisteredUserId}
+                    onChange={(e) => setEditRegisteredUserId(e.target.value)}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                    required
+                    disabled={clientsLoading}
+                  >
+                    <option value="">
+                      {clientsLoading
+                        ? 'Loading clients…'
+                        : registeredUsers.length === 0
+                          ? 'No registered clients — add one on Register User'
+                          : 'Select client'}
+                    </option>
+                    {registeredUsers.map((u) => {
+                      const label = [u.name, u.mobileNumber].filter(Boolean).join(' · ');
+                      return (
+                        <option key={u.id} value={u.id}>
+                          {label || u.id}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-900">Price</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={editAmount}
+                    onChange={(e) => setEditAmount(e.target.value)}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                    required
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={resetEditForm}
+                    className="px-4 py-2 text-gray-600"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={editSaving}
+                    className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90 disabled:opacity-50"
+                  >
+                    {editSaving ? 'Saving...' : 'Save'}
                   </button>
                 </div>
               </form>

@@ -231,8 +231,8 @@ export default function SuperAdminExpensesPage() {
 
   const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addBuildingId || !unitId || !expenseName.trim() || !categoryId || !amount || !expenseDate) {
-      alert('Please select Building, Unit, Category, Description, Amount and Date');
+    if (!addBuildingId || !unitId || !categoryId || !amount || !expenseDate) {
+      alert('Please select Building, Unit, Category, Amount and Date');
       return;
     }
     try {
@@ -414,14 +414,13 @@ export default function SuperAdminExpensesPage() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Description (optional)</label>
               <input
                 type="text"
                 value={expenseName}
                 onChange={(e) => setExpenseName(e.target.value)}
                 className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                 placeholder="e.g. Plumbing repair"
-                required
               />
             </div>
             <div>
@@ -660,13 +659,12 @@ export default function SuperAdminExpensesPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-900">Description</label>
+                  <label className="block text-sm font-medium text-gray-900">Description (optional)</label>
                   <input
                     type="text"
                     value={editExpenseName}
                     onChange={(ev) => setEditExpenseName(ev.target.value)}
                     className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
-                    required
                   />
                 </div>
                 <div>

@@ -4,6 +4,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import api from '@/lib/api';
 import { uploadBedPicture } from '@/lib/supabase';
 
@@ -58,18 +59,25 @@ export default function BuildingDetailPage() {
   const [editBedPictureUrl, setEditBedPictureUrl] = useState('');
   const [editAssigneeName, setEditAssigneeName] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [refreshingTable, setRefreshingTable] = useState(false);
+
+  const refreshRegisteredUsers = async () => {
+    const r = await api.get('/registered-users').catch(() => null);
+    if (!r) return false;
+    setRegisteredUsers(r.data?.users ?? []);
+    return true;
+  };
 
   useEffect(() => {
     if (!buildingId) return;
     Promise.all([
       api.get('/hostels').then((r) => (r.data.hostels || []).find((h: any) => (h.id || h._id) === buildingId)),
       api.get(`/units?hostelId=${buildingId}`).then((r) => r.data.units || []),
-      api.get('/registered-users').then((r) => r.data.users || []),
+      refreshRegisteredUsers(),
     ])
-      .then(([b, u, registered]) => {
+      .then(([b, u]) => {
         setBuilding(b || null);
         setUnits(u);
-        setRegisteredUsers(registered);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -89,19 +97,51 @@ export default function BuildingDetailPage() {
     api.get(`/rooms/${selectedRoomId}/beds`).then((r) => setBeds(r.data.beds || [])).catch(() => setBeds([]));
   }, [selectedRoomId]);
 
-  const refreshUnits = () => {
-    api.get(`/units?hostelId=${buildingId}`).then((r) => setUnits(r.data.units || [])).catch(() => {});
+  const refreshUnits = async () => {
+    const r = await api.get(`/units?hostelId=${buildingId}`).catch(() => null);
+    if (!r) return false;
+    setUnits(r.data?.units ?? []);
+    return true;
   };
-  const refreshRooms = () => {
+  const refreshRooms = async () => {
     const q = selectedUnitId ? `unitId=${selectedUnitId}&hostelId=${buildingId}` : `hostelId=${buildingId}`;
-    api.get(`/rooms?${q}`).then((r) => setRooms(r.data.rooms || [])).catch(() => {});
+    const r = await api.get(`/rooms?${q}`).catch(() => null);
+    if (!r) return false;
+    setRooms(r.data?.rooms ?? []);
+    return true;
   };
   const refreshBeds = async () => {
-    if (selectedRoomId) {
-      const r = await api.get(`/rooms/${selectedRoomId}/beds`).catch(() => ({ data: { beds: [] } }));
-      setBeds(r.data?.beds ?? []);
+    if (!selectedRoomId) return false;
+    const r = await api.get(`/rooms/${selectedRoomId}/beds`).catch(() => null);
+    if (!r) return false;
+    setBeds(r.data?.beds ?? []);
+    return true;
+  };
+  const refreshCurrentTable = async () => {
+    setRefreshingTable(true);
+    try {
+      let refreshed = false;
+      if (viewStep === 'beds') {
+        refreshed = await refreshBeds();
+      } else if (viewStep === 'rooms') {
+        refreshed = await refreshRooms();
+      } else {
+        refreshed = await refreshUnits();
+      }
+      if (!refreshed) {
+        alert('Failed to refresh the table right now.');
+      }
+    } finally {
+      setRefreshingTable(false);
     }
   };
+  const renderTableRefreshOverlay = () =>
+    refreshingTable ? (
+      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-white/75 backdrop-blur-[1px]">
+        <Loader2 className="h-8 w-8 animate-spin text-secondary" />
+        <p className="text-sm font-medium text-gray-700">Refreshing table...</p>
+      </div>
+    ) : null;
 
   const handleAddUnit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -249,7 +289,7 @@ export default function BuildingDetailPage() {
       });
       setAssignModal(null);
       setSelectedRegisteredUserId('');
-      refreshBeds();
+      await Promise.all([refreshBeds(), refreshRegisteredUsers()]);
     } catch (err: any) {
       alert(err.response?.data?.message || 'Failed to assign bed');
     } finally {
@@ -260,7 +300,7 @@ export default function BuildingDetailPage() {
   const handleUnassign = async (bedId: string) => {
     try {
       await api.patch(`/beds/${bedId}/unassign`);
-      refreshBeds();
+      await Promise.all([refreshBeds(), refreshRegisteredUsers()]);
     } catch (err: any) {
       alert(err.response?.data?.message || 'Failed to unassign');
     }
@@ -321,11 +361,22 @@ export default function BuildingDetailPage() {
   return (
     <DashboardLayout requiredRole={['super_admin']}>
       <div className="space-y-8">
-        <div className="flex items-center gap-4">
-          <Link href="/super-admin/hostels" className="text-gray-500 hover:text-gray-700">
-            ← Buildings
-          </Link>
-          <h2 className="text-2xl font-bold text-gray-900">{building.name}</h2>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <Link href="/super-admin/hostels" className="text-gray-500 hover:text-gray-700">
+              ← Buildings
+            </Link>
+            <h2 className="text-2xl font-bold text-gray-900">{building.name}</h2>
+          </div>
+          <button
+            type="button"
+            onClick={refreshCurrentTable}
+            disabled={refreshingTable}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {refreshingTable ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {refreshingTable ? 'Refreshing...' : 'Refresh'}
+          </button>
         </div>
 
         {viewStep === 'units' && (
@@ -340,7 +391,8 @@ export default function BuildingDetailPage() {
                 + Add Unit
               </button>
             </div>
-            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <div className="relative bg-white rounded-lg border border-gray-200 overflow-hidden">
+              {renderTableRefreshOverlay()}
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
@@ -416,7 +468,8 @@ export default function BuildingDetailPage() {
                 + Add Room
               </button>
             </div>
-            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <div className="relative bg-white rounded-lg border border-gray-200 overflow-hidden">
+              {renderTableRefreshOverlay()}
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
@@ -488,7 +541,8 @@ export default function BuildingDetailPage() {
                 + Add Bed
               </button>
             </div>
-            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <div className="relative bg-white rounded-lg border border-gray-200 overflow-hidden">
+              {renderTableRefreshOverlay()}
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
@@ -556,7 +610,11 @@ export default function BuildingDetailPage() {
                           ) : (
                             <button
                               type="button"
-                              onClick={() => setAssignModal({ bedId: b.id, bedNumber: b.bedNumber })}
+                              onClick={async () => {
+                                setSelectedRegisteredUserId('');
+                                await refreshRegisteredUsers();
+                                setAssignModal({ bedId: b.id, bedNumber: b.bedNumber });
+                              }}
                               className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
                             >
                               Assign
@@ -880,14 +938,18 @@ export default function BuildingDetailPage() {
                   >
                     <option value="">Select user</option>
                     {registeredUsers.map((u: any) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name} {u.mobileNumber ? `(${u.mobileNumber})` : ''}
+                      <option key={u.id} value={u.id} disabled={Boolean(u.isAssigned)}>
+                        {u.name} {u.mobileNumber ? `(${u.mobileNumber})` : ''}{u.isAssigned ? ' - Already assigned' : ''}
                       </option>
                     ))}
                   </select>
                   {registeredUsers.length === 0 && (
                     <p className="mt-1 text-xs text-red-600">
                       No registered users found. Add users from Register User page first.
+                    </p>
+                  )}
+                  {registeredUsers.some((u: any) => u.isAssigned) && (
+                    <p className="mt-1 text-xs text-gray-500">
                     </p>
                   )}
                 </div>
