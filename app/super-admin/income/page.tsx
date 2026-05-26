@@ -18,6 +18,11 @@ type IncomeRow = {
   paymentId?: string | null;
 };
 
+type PaymentMonthSummary = {
+  month: number;
+  amount: number;
+};
+
 const months = [
   { value: 1, label: 'January' },
   { value: 2, label: 'February' },
@@ -51,6 +56,7 @@ export default function SuperAdminIncomePage() {
   const [payAmount, setPayAmount] = useState(0);
   const [paying, setPaying] = useState(false);
   const [paidMonths, setPaidMonths] = useState<number[]>([]);
+  const [paymentMonths, setPaymentMonths] = useState<PaymentMonthSummary[]>([]);
   const [loadingPaidMonths, setLoadingPaidMonths] = useState(false);
 
   const years = useMemo(() => {
@@ -103,8 +109,10 @@ export default function SuperAdminIncomePage() {
       setLoadingPaidMonths(true);
       const res = await api.get(`/income/paid-months?bedId=${bedId}&year=${y}`);
       setPaidMonths(res.data.months || []);
+      setPaymentMonths(res.data.payments || []);
     } catch {
       setPaidMonths([]);
+      setPaymentMonths([]);
     } finally {
       setLoadingPaidMonths(false);
     }
@@ -114,7 +122,7 @@ export default function SuperAdminIncomePage() {
     setPayModal(row);
     setPayMonth(month);
     setPayYear(year);
-    setPayAmount(Number(row.basePrice || 0));
+    setPayAmount(0);
     fetchPaidMonths(row.bedId, year);
   };
 
@@ -127,8 +135,16 @@ export default function SuperAdminIncomePage() {
   const handlePay = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!payModal) return;
-    if (paidMonths.includes(payMonth)) {
+    if (isSelectedMonthPaid) {
       alert('This month is already paid for this bed. Choose another month.');
+      return;
+    }
+    if (!Number.isFinite(payAmount) || payAmount <= 0) {
+      alert('Please enter a valid payment amount.');
+      return;
+    }
+    if (payAmount > remainingDueBeforePayment) {
+      alert(`Entered amount is greater than remaining due of ৳${remainingDueBeforePayment.toFixed(2)}.`);
       return;
     }
     try {
@@ -162,6 +178,18 @@ export default function SuperAdminIncomePage() {
   const isSelectedMonthPaid = useMemo(() => {
     return paidMonths.includes(payMonth);
   }, [paidMonths, payMonth]);
+
+  const selectedPaidAmount = useMemo(() => {
+    return Number(paymentMonths.find((entry) => entry.month === payMonth)?.amount || 0);
+  }, [paymentMonths, payMonth]);
+
+  const remainingDueBeforePayment = useMemo(() => {
+    return Math.max(Number(payModal?.basePrice || 0) - selectedPaidAmount, 0);
+  }, [payModal, selectedPaidAmount]);
+
+  const remainingDue = useMemo(() => {
+    return Math.max(remainingDueBeforePayment - Number(payAmount || 0), 0);
+  }, [remainingDueBeforePayment, payAmount]);
 
   return (
     <DashboardLayout requiredRole={['super_admin']}>
@@ -303,7 +331,7 @@ export default function SuperAdminIncomePage() {
                           >
                             Payment
                           </button>
-                          {row.status === 'paid' && row.paymentId ? (
+                          {row.paymentId ? (
                             <button
                               type="button"
                               onClick={() => handleDeletePayment(row)}
@@ -380,15 +408,39 @@ export default function SuperAdminIncomePage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Bed amount</label>
                   <input
                     type="number"
-                    min={0}
-                    step={0.01}
-                    value={payAmount}
-                    onChange={(e) => setPayAmount(Number(e.target.value))}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
-                    required
+                    value={Number(payModal.basePrice || 0)}
+                    className="w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-gray-900"
+                    readOnly
+                    disabled
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Enter amount</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    max={remainingDueBeforePayment}
+                    value={payAmount || ''}
+                    onChange={(e) => setPayAmount(Number(e.target.value))}
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                    placeholder="Enter paid amount"
+                    required
+                    disabled={isSelectedMonthPaid}
+                  />
+                  {selectedPaidAmount > 0 ? (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Already paid for this month: ৳{selectedPaidAmount.toFixed(2)}
+                    </p>
+                  ) : null}
+                </div>
                 <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700"
+                  >
+                    Due: ৳{remainingDue.toFixed(2)}
+                  </button>
                   <button
                     type="button"
                     onClick={() => setPayModal(null)}
