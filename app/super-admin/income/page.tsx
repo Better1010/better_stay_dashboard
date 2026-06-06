@@ -16,6 +16,9 @@ type IncomeRow = {
   status: 'paid' | 'unpaid';
   paidAmount: number;
   paymentId?: string | null;
+  totalDue: number;
+  billingStartMonth: number;
+  billingStartYear: number;
 };
 
 type PaymentMonthSummary = {
@@ -38,6 +41,19 @@ const months = [
   { value: 12, label: 'December' },
 ];
 
+const monthYearKey = (year: number, month: number) => year * 12 + month;
+
+const isMonthPayable = (
+  month: number,
+  year: number,
+  billingStart: { month: number; year: number },
+  endYear: number,
+  endMonth: number
+) => {
+  const key = monthYearKey(year, month);
+  return key >= monthYearKey(billingStart.year, billingStart.month) && key <= monthYearKey(endYear, endMonth);
+};
+
 export default function SuperAdminIncomePage() {
   const now = useMemo(() => new Date(), []);
   const [rows, setRows] = useState<IncomeRow[]>([]);
@@ -49,6 +65,7 @@ export default function SuperAdminIncomePage() {
   const [year, setYear] = useState(now.getFullYear());
   const [search, setSearch] = useState('');
   const [totalIncome, setTotalIncome] = useState(0);
+  const [totalDue, setTotalDue] = useState(0);
   const [loading, setLoading] = useState(true);
   const [payModal, setPayModal] = useState<IncomeRow | null>(null);
   const [payMonth, setPayMonth] = useState(now.getMonth() + 1);
@@ -58,6 +75,10 @@ export default function SuperAdminIncomePage() {
   const [paidMonths, setPaidMonths] = useState<number[]>([]);
   const [paymentMonths, setPaymentMonths] = useState<PaymentMonthSummary[]>([]);
   const [loadingPaidMonths, setLoadingPaidMonths] = useState(false);
+  const [billingStartMonth, setBillingStartMonth] = useState(1);
+  const [billingStartYear, setBillingStartYear] = useState(now.getFullYear());
+  const [payableEndMonth, setPayableEndMonth] = useState(now.getMonth() + 1);
+  const [payableEndYear, setPayableEndYear] = useState(now.getFullYear());
 
   const years = useMemo(() => {
     const start = now.getFullYear() - 3;
@@ -76,9 +97,11 @@ export default function SuperAdminIncomePage() {
       const res = await api.get(`/income?${params.toString()}`);
       setRows(res.data.rows || []);
       setTotalIncome(Number(res.data.totalIncome || 0));
+      setTotalDue(Number(res.data.totalDue || 0));
     } catch {
       setRows([]);
       setTotalIncome(0);
+      setTotalDue(0);
     } finally {
       setLoading(false);
     }
@@ -110,6 +133,10 @@ export default function SuperAdminIncomePage() {
       const res = await api.get(`/income/paid-months?bedId=${bedId}&year=${y}`);
       setPaidMonths(res.data.months || []);
       setPaymentMonths(res.data.payments || []);
+      setBillingStartMonth(Number(res.data.billingStartMonth || 1));
+      setBillingStartYear(Number(res.data.billingStartYear || now.getFullYear()));
+      setPayableEndMonth(Number(res.data.currentMonth || now.getMonth() + 1));
+      setPayableEndYear(Number(res.data.currentYear || now.getFullYear()));
     } catch {
       setPaidMonths([]);
       setPaymentMonths([]);
@@ -119,32 +146,67 @@ export default function SuperAdminIncomePage() {
   };
 
   const openPayModal = (row: IncomeRow) => {
+    const billingStart = {
+      month: row.billingStartMonth || 1,
+      year: row.billingStartYear || now.getFullYear(),
+    };
+    const endYear = now.getFullYear();
+    const endMonth = now.getMonth() + 1;
+    let defaultYear = endYear;
+    let defaultMonth = endMonth;
+    if (isMonthPayable(month, year, billingStart, endYear, endMonth)) {
+      defaultYear = year;
+      defaultMonth = month;
+    } else if (!isMonthPayable(defaultMonth, defaultYear, billingStart, endYear, endMonth)) {
+      defaultYear = billingStart.year;
+      defaultMonth = billingStart.month;
+    }
     setPayModal(row);
-    setPayMonth(month);
-    setPayYear(year);
+    setPayMonth(defaultMonth);
+    setPayYear(defaultYear);
     setPayAmount(0);
-    fetchPaidMonths(row.bedId, year);
+    setBillingStartMonth(billingStart.month);
+    setBillingStartYear(billingStart.year);
+    setPayableEndMonth(endMonth);
+    setPayableEndYear(endYear);
+    fetchPaidMonths(row.bedId, defaultYear);
   };
 
   useEffect(() => {
     if (!payModal) return;
-    if (payModal.status === 'paid') return;
     fetchPaidMonths(payModal.bedId, payYear);
   }, [payYear, payModal]);
+
+  useEffect(() => {
+    if (!payModal) return;
+    const billingStart = { month: billingStartMonth, year: billingStartYear };
+    if (isMonthPayable(payMonth, payYear, billingStart, payableEndYear, payableEndMonth)) return;
+    const firstPayable = months.find((entry) =>
+      isMonthPayable(entry.value, payYear, billingStart, payableEndYear, payableEndMonth)
+    );
+    if (firstPayable) {
+      setPayMonth(firstPayable.value);
+    }
+  }, [payYear, payModal, billingStartMonth, billingStartYear, payableEndMonth, payableEndYear, payMonth]);
 
   const handlePay = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!payModal) return;
-    if (isSelectedMonthPaid) {
-      alert('This month is already paid for this bed. Choose another month.');
+    if (!isSelectedMonthPayable) {
+      alert('Payment is not available for this month.');
+      return;
+    }
+    const remainingTotalDue = Number(payModal.totalDue || 0);
+    if (remainingTotalDue <= 0) {
+      alert('No due amount remaining for this bed.');
       return;
     }
     if (!Number.isFinite(payAmount) || payAmount <= 0) {
       alert('Please enter a valid payment amount.');
       return;
     }
-    if (payAmount > remainingDueBeforePayment) {
-      alert(`Entered amount is greater than remaining due of ৳${remainingDueBeforePayment.toFixed(2)}.`);
+    if (payAmount > remainingTotalDue) {
+      alert(`Entered amount is greater than total due of ৳${remainingTotalDue.toFixed(2)}.`);
       return;
     }
     try {
@@ -175,9 +237,32 @@ export default function SuperAdminIncomePage() {
     }
   };
 
+  const billingStart = useMemo(
+    () => ({ month: billingStartMonth, year: billingStartYear }),
+    [billingStartMonth, billingStartYear]
+  );
+
+  const payYears = useMemo(() => {
+    const start = billingStartYear;
+    const end = payableEndYear;
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  }, [billingStartYear, payableEndYear]);
+
   const isSelectedMonthPaid = useMemo(() => {
     return paidMonths.includes(payMonth);
   }, [paidMonths, payMonth]);
+
+  const isSelectedMonthPayable = useMemo(() => {
+    return isMonthPayable(payMonth, payYear, billingStart, payableEndYear, payableEndMonth);
+  }, [payMonth, payYear, billingStart, payableEndYear, payableEndMonth]);
+
+  const isMonthOptionDisabled = (monthValue: number) => {
+    return !isMonthPayable(monthValue, payYear, billingStart, payableEndYear, payableEndMonth);
+  };
+
+  const remainingTotalDue = useMemo(() => {
+    return Math.max(Number(payModal?.totalDue || 0), 0);
+  }, [payModal]);
 
   const selectedPaidAmount = useMemo(() => {
     return Number(paymentMonths.find((entry) => entry.month === payMonth)?.amount || 0);
@@ -187,9 +272,11 @@ export default function SuperAdminIncomePage() {
     return Math.max(Number(payModal?.basePrice || 0) - selectedPaidAmount, 0);
   }, [payModal, selectedPaidAmount]);
 
-  const remainingDue = useMemo(() => {
-    return Math.max(remainingDueBeforePayment - Number(payAmount || 0), 0);
-  }, [remainingDueBeforePayment, payAmount]);
+  const totalDueAfterPayment = useMemo(() => {
+    return Math.max(remainingTotalDue - Number(payAmount || 0), 0);
+  }, [remainingTotalDue, payAmount]);
+
+  const isAllDueCleared = remainingTotalDue <= 0;
 
   return (
     <DashboardLayout requiredRole={['super_admin']}>
@@ -198,8 +285,12 @@ export default function SuperAdminIncomePage() {
           <h2 className="text-3xl font-bold text-gray-900">Income</h2>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch sm:justify-end">
             <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
-              <p className="text-xs text-gray-500">Total paid</p>
+              <p className="text-xs text-gray-500">Total paid ({months.find((m) => m.value === month)?.label} {year})</p>
               <p className="text-2xl font-bold text-gray-900">৳{totalIncome.toFixed(2)}</p>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+              <p className="text-xs text-gray-500">Total due (till now)</p>
+              <p className="text-2xl font-bold text-red-600">৳{totalDue.toFixed(2)}</p>
             </div>
             <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex gap-3 items-end">
               <div>
@@ -290,6 +381,7 @@ export default function SuperAdminIncomePage() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Client</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Mobile</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Amount</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Due</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Action</th>
                 </tr>
@@ -297,11 +389,11 @@ export default function SuperAdminIncomePage() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-gray-500">Loading...</td>
+                    <td colSpan={10} className="px-4 py-8 text-center text-gray-500">Loading...</td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
                       No assigned clients found for selected filters.
                     </td>
                   </tr>
@@ -315,9 +407,14 @@ export default function SuperAdminIncomePage() {
                       <td className="px-4 py-3 text-sm text-gray-700">{row.assigneeName || '—'}</td>
                       <td className="px-4 py-3 text-sm text-gray-700">{row.mobileNumber || '—'}</td>
                       <td className="px-4 py-3 text-sm text-right text-gray-700">৳{Number(row.basePrice || 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-sm text-right font-medium text-red-600">
+                        ৳{Number(row.totalDue || 0).toFixed(2)}
+                      </td>
                       <td className="px-4 py-3 text-sm">
                         {row.status === 'paid' ? (
-                          <span className="px-2 py-1 rounded-full bg-green-100 text-green-700 text-xs font-semibold">Paid</span>
+                          <span className="px-2 py-1 rounded-full bg-green-100 text-green-700 text-xs font-semibold">
+                            {Number(row.totalDue || 0) <= 0 ? 'All paid' : 'Paid'}
+                          </span>
                         ) : (
                           <span className="px-2 py-1 rounded-full bg-red-100 text-red-700 text-xs font-semibold">Unpaid</span>
                         )}
@@ -369,7 +466,7 @@ export default function SuperAdminIncomePage() {
                         <option
                           key={m.value}
                           value={m.value}
-                          disabled={paidMonths.includes(m.value) && m.value !== payMonth}
+                          disabled={isMonthOptionDisabled(m.value)}
                         >
                           {m.label}
                         </option>
@@ -377,8 +474,12 @@ export default function SuperAdminIncomePage() {
                     </select>
                     {loadingPaidMonths ? (
                       <p className="mt-1 text-xs text-gray-500">Checking paid months…</p>
-                    ) : isSelectedMonthPaid ? (
-                      <p className="mt-1 text-xs text-red-600">This month is already paid for this bed. Pick another month.</p>
+                    ) : isSelectedMonthPaid && remainingTotalDue > 0 ? (
+                      <p className="mt-1 text-xs text-amber-600">
+                        This month is fully paid. Your payment will clear other due months first.
+                      </p>
+                    ) : !isSelectedMonthPayable ? (
+                      <p className="mt-1 text-xs text-red-600">Payment is not available before registration or for future months.</p>
                     ) : null}
                   </div>
                   <div>
@@ -388,7 +489,7 @@ export default function SuperAdminIncomePage() {
                       onChange={(e) => setPayYear(Number(e.target.value))}
                       className="w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
                     >
-                      {years.map((y) => (
+                      {payYears.map((y) => (
                         <option key={y} value={y}>
                           {y}
                         </option>
@@ -398,10 +499,10 @@ export default function SuperAdminIncomePage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-gray-600">Status</p>
-                  {isSelectedMonthPaid ? (
-                    <span className="px-2 py-1 rounded-full bg-green-100 text-green-700 text-xs font-semibold">Paid</span>
+                  {isAllDueCleared || totalDueAfterPayment <= 0 ? (
+                    <span className="px-2 py-1 rounded-full bg-green-100 text-green-700 text-xs font-semibold">All paid</span>
                   ) : (
-                    <span className="px-2 py-1 rounded-full bg-red-100 text-red-700 text-xs font-semibold">Unpaid</span>
+                    <span className="px-2 py-1 rounded-full bg-red-100 text-red-700 text-xs font-semibold">Due</span>
                   )}
                 </div>
                 <div>
@@ -420,27 +521,27 @@ export default function SuperAdminIncomePage() {
                     type="number"
                     min={0}
                     step={0.01}
-                    max={remainingDueBeforePayment}
+                    max={remainingTotalDue}
                     value={payAmount || ''}
                     onChange={(e) => setPayAmount(Number(e.target.value))}
                     className="w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
                     placeholder="Enter paid amount"
                     required
-                    disabled={isSelectedMonthPaid}
+                    disabled={!isSelectedMonthPayable || isAllDueCleared}
                   />
                   {selectedPaidAmount > 0 ? (
                     <p className="mt-1 text-xs text-gray-500">
                       Already paid for this month: ৳{selectedPaidAmount.toFixed(2)}
+                      {remainingDueBeforePayment > 0}
                     </p>
                   ) : null}
                 </div>
                 <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700"
+                  <div
+                    className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-red-600"
                   >
-                    Due: ৳{remainingDue.toFixed(2)}
-                  </button>
+                    Total due: ৳{totalDueAfterPayment.toFixed(2)}
+                  </div>
                   <button
                     type="button"
                     onClick={() => setPayModal(null)}
@@ -450,10 +551,10 @@ export default function SuperAdminIncomePage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={paying || isSelectedMonthPaid}
+                    disabled={paying || !isSelectedMonthPayable || isAllDueCleared}
                     className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90 disabled:opacity-50"
                   >
-                    {paying ? 'Saving...' : isSelectedMonthPaid ? 'Paid' : 'Pay'}
+                    {paying ? 'Saving...' : isAllDueCleared ? 'All paid' : 'Pay'}
                   </button>
                 </div>
               </form>
