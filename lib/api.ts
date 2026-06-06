@@ -125,14 +125,88 @@ const getRegisteredUsers = async (): Promise<ApiResponse> => {
       activeAssignmentByUserId.set(assignment.registered_user_id, assignment);
     }
   }
+
+  type AssignmentLocation = {
+    buildingId: string;
+    buildingName: string;
+    unitId: string;
+    unitNumber: string;
+    roomId: string;
+    roomNumber: string;
+    bedNumber: string;
+  };
+  const locationByUserId = new Map<string, AssignmentLocation>();
+  const assignedBedIds = Array.from(
+    new Set(
+      Array.from(activeAssignmentByUserId.values())
+        .map((assignment: any) => assignment.bed_id)
+        .filter(Boolean),
+    ),
+  );
+
+  if (assignedBedIds.length > 0) {
+    const bedsRes = await supabase.from('beds').select('id, bed_number, room_id').in('id', assignedBedIds);
+    throwIfError(bedsRes.error, 'Failed to load assigned beds');
+    const beds = bedsRes.data || [];
+    const roomIds = Array.from(new Set(beds.map((bed: any) => bed.room_id).filter(Boolean)));
+    const roomsRes =
+      roomIds.length > 0
+        ? await supabase.from('rooms').select('id, room_number, unit_id, hostel_id').in('id', roomIds)
+        : ({ data: [], error: null } as any);
+    throwIfError(roomsRes.error, 'Failed to load assigned rooms');
+
+    const rooms = roomsRes.data || [];
+    const unitIds = Array.from(new Set(rooms.map((room: any) => room.unit_id).filter(Boolean)));
+    const hostelIds = Array.from(new Set(rooms.map((room: any) => room.hostel_id).filter(Boolean)));
+    const [unitsRes, hostelsRes] = await Promise.all([
+      unitIds.length > 0
+        ? supabase.from('units').select('id, unit_number').in('id', unitIds)
+        : Promise.resolve({ data: [], error: null } as any),
+      hostelIds.length > 0
+        ? supabase.from('hostels').select('id, name').in('id', hostelIds)
+        : Promise.resolve({ data: [], error: null } as any),
+    ]);
+    throwIfError(unitsRes.error, 'Failed to load assigned units');
+    throwIfError(hostelsRes.error, 'Failed to load assigned buildings');
+
+    const bedById = new Map<string, any>(beds.map((bed: any) => [bed.id, bed]));
+    const roomById = new Map<string, any>(rooms.map((room: any) => [room.id, room]));
+    const unitById = new Map<string, any>((unitsRes.data || []).map((unit: any) => [unit.id, unit]));
+    const hostelById = new Map<string, any>((hostelsRes.data || []).map((hostel: any) => [hostel.id, hostel]));
+
+    for (const [userId, assignment] of activeAssignmentByUserId.entries()) {
+      const bed = bedById.get(assignment.bed_id);
+      const room = bed ? roomById.get(bed.room_id) : null;
+      const unit = room?.unit_id ? unitById.get(room.unit_id) : null;
+      const hostel = room?.hostel_id ? hostelById.get(room.hostel_id) : null;
+      locationByUserId.set(userId, {
+        buildingId: room?.hostel_id || '',
+        buildingName: hostel?.name || '',
+        unitId: room?.unit_id || '',
+        unitNumber: unit?.unit_number || '',
+        roomId: room?.id || '',
+        roomNumber: room?.room_number || '',
+        bedNumber: bed?.bed_number || '',
+      });
+    }
+  }
+
   const users = (res.data || []).map((u: any) => ({
     id: u.id,
     name: u.name,
     mobileNumber: u.mobile_number ?? '',
     nidFrontUrl: u.nid_picture_front_url,
     nidBackUrl: u.nid_picture_back_url,
+    status: u.status || 'active',
     isAssigned: activeAssignmentByUserId.has(u.id),
     activeBedId: activeAssignmentByUserId.get(u.id)?.bed_id ?? null,
+    buildingId: locationByUserId.get(u.id)?.buildingId ?? '',
+    buildingName: locationByUserId.get(u.id)?.buildingName ?? '',
+    unitId: locationByUserId.get(u.id)?.unitId ?? '',
+    unitNumber: locationByUserId.get(u.id)?.unitNumber ?? '',
+    roomId: locationByUserId.get(u.id)?.roomId ?? '',
+    roomNumber: locationByUserId.get(u.id)?.roomNumber ?? '',
+    bedNumber: locationByUserId.get(u.id)?.bedNumber ?? '',
     createdAt: u.created_at,
     updatedAt: u.updated_at,
   }));
@@ -145,6 +219,7 @@ const createRegisteredUser = async (payload: any): Promise<ApiResponse> => {
   const mobileNumber = payload?.mobileNumber ? String(payload.mobileNumber).trim() : '';
   const nidFrontUrl = payload?.nidFrontUrl ? String(payload.nidFrontUrl).trim() : '';
   const nidBackUrl = payload?.nidBackUrl ? String(payload.nidBackUrl).trim() : '';
+  const status = payload?.status === 'inactive' ? 'inactive' : 'active';
   if (!name) throw new ApiRequestError(400, 'User name is required');
   if (!nidFrontUrl || !nidBackUrl) throw new ApiRequestError(400, 'NID front and back pictures are required');
   const res = await supabase
@@ -154,6 +229,7 @@ const createRegisteredUser = async (payload: any): Promise<ApiResponse> => {
       mobile_number: mobileNumber || null,
       nid_picture_front_url: nidFrontUrl,
       nid_picture_back_url: nidBackUrl,
+      status,
       created_at: nowIso(),
       updated_at: nowIso(),
     })
@@ -168,11 +244,69 @@ const createRegisteredUser = async (payload: any): Promise<ApiResponse> => {
         mobileNumber: res.data.mobile_number ?? '',
         nidFrontUrl: res.data.nid_picture_front_url,
         nidBackUrl: res.data.nid_picture_back_url,
+        status: res.data.status || status,
         createdAt: res.data.created_at,
         updatedAt: res.data.updated_at,
       },
     },
   };
+};
+
+const unassignRegisteredUserFromBed = async (registeredUserId: string) => {
+  const assignmentRes = await supabase
+    .from('bed_assignments')
+    .select('bed_id')
+    .eq('registered_user_id', registeredUserId)
+    .is('ended_at', null)
+    .maybeSingle();
+  throwIfError(assignmentRes.error, 'Failed to load user assignment');
+  if (!assignmentRes.data?.bed_id) return;
+  await unassignBed(assignmentRes.data.bed_id);
+};
+
+type AvailableBedIndex = {
+  hostelIds: Set<string>;
+  unitIds: Set<string>;
+  roomIds: Set<string>;
+  occupiedBedIds: Set<string>;
+};
+
+const buildAvailableBedIndex = async (): Promise<AvailableBedIndex> => {
+  const activeAssignRes = await supabase.from('bed_assignments').select('bed_id').is('ended_at', null);
+  throwIfError(activeAssignRes.error, 'Failed to load active bed assignments');
+  const occupiedBedIds = new Set((activeAssignRes.data || []).map((row: { bed_id: string }) => row.bed_id));
+
+  const bedsRes = await supabase.from('beds').select('id, room_id');
+  throwIfError(bedsRes.error, 'Failed to load beds');
+
+  const freeBedRoomIds = new Set<string>();
+  for (const bed of bedsRes.data || []) {
+    if (!occupiedBedIds.has(bed.id)) {
+      freeBedRoomIds.add(bed.room_id);
+    }
+  }
+
+  const empty: AvailableBedIndex = {
+    hostelIds: new Set(),
+    unitIds: new Set(),
+    roomIds: new Set(),
+    occupiedBedIds,
+  };
+  if (freeBedRoomIds.size === 0) return empty;
+
+  const roomsRes = await supabase
+    .from('rooms')
+    .select('id, unit_id, hostel_id')
+    .in('id', Array.from(freeBedRoomIds));
+  throwIfError(roomsRes.error, 'Failed to load rooms for available beds');
+
+  const index = { ...empty };
+  for (const room of roomsRes.data || []) {
+    index.roomIds.add(room.id);
+    if (room.unit_id) index.unitIds.add(room.unit_id);
+    if (room.hostel_id) index.hostelIds.add(room.hostel_id);
+  }
+  return index;
 };
 
 const updateRegisteredUser = async (id: string, payload: any): Promise<ApiResponse> => {
@@ -192,8 +326,18 @@ const updateRegisteredUser = async (id: string, payload: any): Promise<ApiRespon
   if (payload?.nidBackUrl != null && String(payload.nidBackUrl).trim() !== '') {
     updates.nid_picture_back_url = String(payload.nidBackUrl).trim();
   }
+  if (payload?.status !== undefined) {
+    if (!['active', 'inactive'].includes(payload.status)) {
+      throw new ApiRequestError(400, 'Status must be active or inactive');
+    }
+    updates.status = payload.status;
+  }
   const changed = Object.keys(updates).filter((k) => k !== 'updated_at');
   if (changed.length === 0) throw new ApiRequestError(400, 'No changes to save');
+
+  if (payload?.status === 'inactive') {
+    await unassignRegisteredUserFromBed(id);
+  }
 
   const res = await supabase.from('registered_users').update(updates).eq('id', id).select('*').single();
   throwIfError(res.error, 'Failed to update registered user');
@@ -206,6 +350,7 @@ const updateRegisteredUser = async (id: string, payload: any): Promise<ApiRespon
         mobileNumber: u.mobile_number ?? '',
         nidFrontUrl: u.nid_picture_front_url,
         nidBackUrl: u.nid_picture_back_url,
+        status: u.status || 'active',
         createdAt: u.created_at,
         updatedAt: u.updated_at,
       },
@@ -218,12 +363,18 @@ const updateUserStatus = async (_id: string, _payload: any): Promise<ApiResponse
   throw new ApiRequestError(400, 'User management is disabled. Manage users in Supabase Dashboard.');
 };
 
-const getHostels = async (): Promise<ApiResponse> => {
+const getHostels = async (options?: { availableBedsOnly?: boolean }): Promise<ApiResponse> => {
   requireAuthUser();
   const res = await supabase.from('hostels').select('*').order('created_at', { ascending: false });
   throwIfError(res.error, 'Failed to load hostels');
 
-  const hostelIds = (res.data || []).map((h: any) => h.id as string);
+  let hostelRows = res.data || [];
+  if (options?.availableBedsOnly) {
+    const index = await buildAvailableBedIndex();
+    hostelRows = hostelRows.filter((h: { id: string }) => index.hostelIds.has(h.id));
+  }
+
+  const hostelIds = hostelRows.map((h: any) => h.id as string);
 
   let roomCounts: Record<string, number> = {};
   let bedCounts: Record<string, number> = {};
@@ -249,7 +400,7 @@ const getHostels = async (): Promise<ApiResponse> => {
     }
   }
 
-  const hostels = (res.data || []).map((h: any) => ({
+  const hostels = hostelRows.map((h: any) => ({
     _id: h.id,
     ...h,
     adminId: h.admin_id,
@@ -292,7 +443,7 @@ const createHostel = async (payload: any): Promise<ApiResponse> => {
   return { data: { hostel: { _id: res.data.id, ...res.data } } };
 };
 
-const getUnits = async (hostelId: string): Promise<ApiResponse> => {
+const getUnits = async (hostelId: string, options?: { availableBedsOnly?: boolean }): Promise<ApiResponse> => {
   requireAuthUser();
   const res = await supabase
     .from('units')
@@ -301,7 +452,12 @@ const getUnits = async (hostelId: string): Promise<ApiResponse> => {
     .order('floor', { ascending: true })
     .order('unit_number', { ascending: true });
   throwIfError(res.error, 'Failed to load units');
-  const units = (res.data || []).map((u: any) => ({
+  let unitRows = res.data || [];
+  if (options?.availableBedsOnly) {
+    const index = await buildAvailableBedIndex();
+    unitRows = unitRows.filter((u: { id: string }) => index.unitIds.has(u.id));
+  }
+  const units = unitRows.map((u: any) => ({
     _id: u.id,
     id: u.id,
     hostelId: u.hostel_id,
@@ -357,7 +513,11 @@ const deleteUnit = async (id: string): Promise<ApiResponse> => {
   return { data: { message: 'Unit deleted' } };
 };
 
-const getRooms = async (queryParams?: { unitId?: string; hostelId?: string }): Promise<ApiResponse> => {
+const getRooms = async (queryParams?: {
+  unitId?: string;
+  hostelId?: string;
+  availableBedsOnly?: boolean;
+}): Promise<ApiResponse> => {
   requireAuthUser();
   let query = supabase.from('rooms').select('*');
   if (queryParams?.hostelId) {
@@ -370,7 +530,11 @@ const getRooms = async (queryParams?: { unitId?: string; hostelId?: string }): P
   const res = await query.order('floor', { ascending: true }).order('room_number', { ascending: true });
   throwIfError(res.error, 'Failed to load rooms');
 
-  const roomRows = res.data || [];
+  let roomRows = res.data || [];
+  if (queryParams?.availableBedsOnly) {
+    const index = await buildAvailableBedIndex();
+    roomRows = roomRows.filter((r: { id: string }) => index.roomIds.has(r.id));
+  }
   const roomIds = roomRows.map((r: any) => r.id);
   let bedCountByRoom: Record<string, number> = {};
   if (roomIds.length > 0) {
@@ -457,7 +621,7 @@ const updateRoom = async (id: string, payload: any): Promise<ApiResponse> => {
   return { data: { room: { _id: res.data.id, id: res.data.id, roomNumber: res.data.room_number, floor: res.data.floor, totalBeds: res.data.total_beds, rent: res.data.rent } } };
 };
 
-const getBeds = async (roomId: string): Promise<ApiResponse> => {
+const getBeds = async (roomId: string, options?: { availableOnly?: boolean }): Promise<ApiResponse> => {
   requireAuthUser();
   const roomRes = await supabase.from('rooms').select('hostel_id').eq('id', roomId).single();
   throwIfError(roomRes.error, 'Room not found');
@@ -468,7 +632,8 @@ const getBeds = async (roomId: string): Promise<ApiResponse> => {
     .eq('room_id', roomId)
     .order('bed_number', { ascending: true });
   throwIfError(res.error, 'Failed to load beds');
-  const bedIds = (res.data || []).map((b: any) => b.id);
+  let bedRows = res.data || [];
+  const bedIds = bedRows.map((b: any) => b.id);
   const assignmentsRes =
     bedIds.length > 0
       ? await supabase
@@ -478,6 +643,9 @@ const getBeds = async (roomId: string): Promise<ApiResponse> => {
           .is('ended_at', null)
       : { data: [] as any[] };
   const assignments = new Map((assignmentsRes.data || []).map((a: any) => [a.bed_id, a]));
+  if (options?.availableOnly) {
+    bedRows = bedRows.filter((b: { id: string }) => !assignments.has(b.id));
+  }
   const registeredUserIds = (assignmentsRes.data || [])
     .map((a: any) => a.registered_user_id)
     .filter((id: any): id is string => Boolean(id));
@@ -491,7 +659,7 @@ const getBeds = async (roomId: string): Promise<ApiResponse> => {
       registeredUsersById.set(u.id, u);
     }
   }
-  const beds = (res.data || []).map((b: any) => {
+  const beds = bedRows.map((b: any) => {
     const assignment = assignments.get(b.id);
     const registeredUser = assignment?.registered_user_id ? registeredUsersById.get(assignment.registered_user_id) : null;
     const assigneeName = assignment?.assignee_name ?? registeredUser?.name ?? null;
@@ -608,12 +776,15 @@ const assignBed = async (bedId: string, payload: any): Promise<ApiResponse> => {
   if (registeredUserId) {
     const regRes = await supabase
       .from('registered_users')
-      .select('id, name, mobile_number, nid_picture_front_url, nid_picture_back_url')
+      .select('id, name, mobile_number, nid_picture_front_url, nid_picture_back_url, status')
       .eq('id', registeredUserId)
       .single();
     throwIfError(regRes.error, 'Registered user not found');
     if (!regRes.data) throw new ApiRequestError(404, 'Registered user not found');
     registeredUser = regRes.data;
+    if ((registeredUser.status || 'active') === 'inactive') {
+      throw new ApiRequestError(400, 'Inactive users cannot be assigned to a bed.');
+    }
     name = registeredUser.name;
     mobile = registeredUser.mobile_number || null;
     frontUrl = registeredUser.nid_picture_front_url || null;
@@ -639,11 +810,28 @@ const assignBed = async (bedId: string, payload: any): Promise<ApiResponse> => {
   const roomRes = await supabase.from('rooms').select('hostel_id').eq('id', bedRes.data.room_id).single();
   throwIfError(roomRes.error, 'Room not found');
   if (!roomRes.data) throw new ApiRequestError(404, 'Room not found');
-  await supabase
+  const existingOnBedRes = await supabase
     .from('bed_assignments')
-    .update({ ended_at: nowIso(), updated_at: nowIso() })
+    .select('id, registered_user_id, assignee_name')
     .eq('bed_id', bedId)
-    .is('ended_at', null);
+    .is('ended_at', null)
+    .maybeSingle();
+  throwIfError(existingOnBedRes.error, 'Failed to verify bed availability');
+  if (existingOnBedRes.data) {
+    const sameUser = registeredUserId && existingOnBedRes.data.registered_user_id === registeredUserId;
+    if (!sameUser) {
+      throw new ApiRequestError(409, 'This bed is already assigned to another user.');
+    }
+    return {
+      data: {
+        message: 'Bed already assigned to this user',
+        assignment: {
+          id: existingOnBedRes.data.id,
+          assigneeName: existingOnBedRes.data.assignee_name || name,
+        },
+      },
+    };
+  }
   const assignRes = await supabase
     .from('bed_assignments')
     .insert({
@@ -1153,6 +1341,82 @@ const getClientHistory = async (): Promise<ApiResponse> => {
   return { data: { history: list } };
 };
 
+const monthYearKey = (year: number, month: number) => year * 12 + month;
+
+const getBillingStartFromDates = (registrationDate: string | null | undefined, assignmentDate: string | null | undefined) => {
+  const reg = registrationDate ? new Date(registrationDate) : null;
+  const assign = assignmentDate ? new Date(assignmentDate) : null;
+  const date = reg || assign || new Date();
+  return { year: date.getFullYear(), month: date.getMonth() + 1 };
+};
+
+const listBillableMonths = (
+  startYear: number,
+  startMonth: number,
+  endYear: number,
+  endMonth: number
+): Array<{ year: number; month: number }> => {
+  const months: Array<{ year: number; month: number }> = [];
+  let year = startYear;
+  let month = startMonth;
+  while (year < endYear || (year === endYear && month <= endMonth)) {
+    months.push({ year, month });
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+  }
+  return months;
+};
+
+const isMonthPayable = (
+  month: number,
+  year: number,
+  billingStart: { year: number; month: number },
+  endYear: number,
+  endMonth: number
+) => {
+  const key = monthYearKey(year, month);
+  return key >= monthYearKey(billingStart.year, billingStart.month) && key <= monthYearKey(endYear, endMonth);
+};
+
+const computeCumulativeDue = (
+  basePrice: number,
+  billableMonths: Array<{ year: number; month: number }>,
+  paymentsByKey: Map<string, number>
+) => {
+  if (basePrice <= 0) return 0;
+  return billableMonths.reduce((sum, { year, month }) => {
+    const paid = paymentsByKey.get(`${year}-${month}`) ?? 0;
+    return sum + Math.max(basePrice - paid, 0);
+  }, 0);
+};
+
+const getBillingStartForBed = async (bedId: string) => {
+  const assignRes = await supabase
+    .from('bed_assignments')
+    .select('registered_user_id, assigned_at')
+    .eq('bed_id', bedId)
+    .is('ended_at', null)
+    .maybeSingle();
+  throwIfError(assignRes.error, 'Failed to load assignment');
+  if (!assignRes.data) {
+    throw new ApiRequestError(400, 'This bed is not currently assigned');
+  }
+  let registrationDate: string | null = null;
+  if (assignRes.data.registered_user_id) {
+    const userRes = await supabase
+      .from('registered_users')
+      .select('created_at')
+      .eq('id', assignRes.data.registered_user_id)
+      .maybeSingle();
+    throwIfError(userRes.error, 'Failed to load registered user');
+    registrationDate = userRes.data?.created_at ?? null;
+  }
+  return getBillingStartFromDates(registrationDate, assignRes.data.assigned_at);
+};
+
 const getIncome = async (queryParams?: {
   hostelId?: string;
   unitId?: string;
@@ -1166,14 +1430,17 @@ const getIncome = async (queryParams?: {
   const year = queryParams?.year && queryParams.year >= 2000 ? queryParams.year : now.getFullYear();
   const search = (queryParams?.search || '').trim().toLowerCase();
 
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
   const activeAssignRes = await supabase
     .from('bed_assignments')
-    .select('id, bed_id, registered_user_id, assignee_name, mobile_number')
+    .select('id, bed_id, registered_user_id, assignee_name, mobile_number, assigned_at')
     .is('ended_at', null);
   throwIfError(activeAssignRes.error, 'Failed to load active assignments');
   const activeAssignments = activeAssignRes.data || [];
   if (activeAssignments.length === 0) {
-    return { data: { rows: [], totalIncome: 0, month, year } };
+    return { data: { rows: [], totalIncome: 0, totalDue: 0, month, year } };
   }
 
   const bedIds = activeAssignments.map((a: any) => a.bed_id);
@@ -1184,7 +1451,7 @@ const getIncome = async (queryParams?: {
   throwIfError(bedsRes.error, 'Failed to load beds');
   const beds = bedsRes.data || [];
   if (beds.length === 0) {
-    return { data: { rows: [], totalIncome: 0, month, year } };
+    return { data: { rows: [], totalIncome: 0, totalDue: 0, month, year } };
   }
 
   const roomIds = beds.map((b: any) => b.room_id);
@@ -1204,7 +1471,7 @@ const getIncome = async (queryParams?: {
     return true;
   });
   if (filteredBeds.length === 0) {
-    return { data: { rows: [], totalIncome: 0, month, year } };
+    return { data: { rows: [], totalIncome: 0, totalDue: 0, month, year } };
   }
 
   const filteredBedIds = filteredBeds.map((b: any) => b.id);
@@ -1218,7 +1485,7 @@ const getIncome = async (queryParams?: {
   if (registeredUserIds.length > 0) {
     const registeredRes = await supabase
       .from('registered_users')
-      .select('id, name, mobile_number')
+      .select('id, name, mobile_number, created_at')
       .in('id', registeredUserIds);
     throwIfError(registeredRes.error, 'Failed to load registered users');
     for (const u of registeredRes.data || []) {
@@ -1228,7 +1495,7 @@ const getIncome = async (queryParams?: {
 
   const unitIds = rooms.map((r: any) => r.unit_id).filter((id: any): id is string => Boolean(id));
   const hostelIds = rooms.map((r: any) => r.hostel_id).filter((id: any): id is string => Boolean(id));
-  const [unitsRes, hostelsRes, paidRes] = await Promise.all([
+  const [unitsRes, hostelsRes, paidRes, allPaymentsRes] = await Promise.all([
     unitIds.length > 0 ? supabase.from('units').select('id, unit_number').in('id', unitIds) : Promise.resolve({ data: [], error: null } as any),
     hostelIds.length > 0 ? supabase.from('hostels').select('id, name').in('id', hostelIds) : Promise.resolve({ data: [], error: null } as any),
     supabase
@@ -1237,14 +1504,28 @@ const getIncome = async (queryParams?: {
       .eq('month', month)
       .eq('year', year)
       .in('bed_id', filteredBedIds),
+    supabase
+      .from('income_payments')
+      .select('bed_id, month, year, amount')
+      .in('bed_id', filteredBedIds),
   ]);
   throwIfError(unitsRes.error, 'Failed to load units');
   throwIfError(hostelsRes.error, 'Failed to load hostels');
   throwIfError(paidRes.error, 'Failed to load income payments');
+  throwIfError(allPaymentsRes.error, 'Failed to load payment history');
 
   const unitsById = new Map<string, any>((unitsRes.data || []).map((u: any) => [u.id, u]));
   const hostelsById = new Map<string, any>((hostelsRes.data || []).map((h: any) => [h.id, h]));
   const paidByBedId = new Map<string, any>((paidRes.data || []).map((p: any) => [p.bed_id, p]));
+  const allPaymentsByBedId = new Map<string, Map<string, number>>();
+  for (const payment of allPaymentsRes.data || []) {
+    const bedId = payment.bed_id as string;
+    if (!allPaymentsByBedId.has(bedId)) {
+      allPaymentsByBedId.set(bedId, new Map());
+    }
+    const key = `${payment.year}-${payment.month}`;
+    allPaymentsByBedId.get(bedId)!.set(key, Number(payment.amount || 0));
+  }
 
   const rows = filteredBeds
     .map((bed: any) => {
@@ -1258,6 +1539,18 @@ const getIncome = async (queryParams?: {
       const paid = paidByBedId.get(bed.id);
       const basePrice = Number(bed.base_price ?? 0);
       const paidAmount = paid ? Number(paid.amount) : 0;
+      const billingStart = getBillingStartFromDates(
+        registered?.created_at ?? null,
+        assignment.assigned_at ?? null
+      );
+      const billableMonths = listBillableMonths(
+        billingStart.year,
+        billingStart.month,
+        currentYear,
+        currentMonth
+      );
+      const paymentsByKey = allPaymentsByBedId.get(bed.id) || new Map<string, number>();
+      const totalDue = computeCumulativeDue(basePrice, billableMonths, paymentsByKey);
       return {
         bedId: bed.id,
         bedNumber: bed.bed_number,
@@ -1267,9 +1560,12 @@ const getIncome = async (queryParams?: {
         buildingName: hostelsById.get(room.hostel_id)?.name || '',
         assigneeName,
         mobileNumber,
-        status: paidAmount >= basePrice && basePrice > 0 ? 'paid' : 'unpaid',
+        status: totalDue <= 0 && basePrice > 0 ? 'paid' : paidAmount >= basePrice && basePrice > 0 ? 'paid' : 'unpaid',
         paidAmount,
         paymentId: paid ? paid.id : null,
+        totalDue,
+        billingStartMonth: billingStart.month,
+        billingStartYear: billingStart.year,
       };
     })
     .filter(Boolean) as any[];
@@ -1283,20 +1579,25 @@ const getIncome = async (queryParams?: {
     : rows;
 
   const totalIncome = searchedRows.reduce((sum: number, row: any) => sum + Number(row.paidAmount || 0), 0);
-  return { data: { rows: searchedRows, totalIncome, month, year } };
+  const totalDue = searchedRows.reduce((sum: number, row: any) => sum + Number(row.totalDue || 0), 0);
+  return { data: { rows: searchedRows, totalIncome, totalDue, month, year } };
 };
 
 const getPaidMonths = async (bedId: string, year: number): Promise<ApiResponse> => {
   requireAuthUser();
   if (!bedId) throw new ApiRequestError(400, 'bedId is required');
   if (!year || year < 2000) throw new ApiRequestError(400, 'Valid year is required');
-  const [bedRes, res] = await Promise.all([
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const [bedRes, res, billingStart] = await Promise.all([
     supabase.from('beds').select('base_price').eq('id', bedId).single(),
     supabase
       .from('income_payments')
       .select('month, amount')
       .eq('bed_id', bedId)
       .eq('year', year),
+    getBillingStartForBed(bedId),
   ]);
   throwIfError(bedRes.error, 'Failed to load bed price');
   throwIfError(res.error, 'Failed to load paid months');
@@ -1307,7 +1608,17 @@ const getPaidMonths = async (bedId: string, year: number): Promise<ApiResponse> 
   const months = Array.from(
     new Set(payments.filter((r: any) => r.amount >= basePrice && basePrice > 0).map((r: any) => r.month))
   ).sort((a, b) => a - b);
-  return { data: { months, payments, basePrice } };
+  return {
+    data: {
+      months,
+      payments,
+      basePrice,
+      billingStartMonth: billingStart.month,
+      billingStartYear: billingStart.year,
+      currentMonth,
+      currentYear,
+    },
+  };
 };
 
 const payIncome = async (payload: any): Promise<ApiResponse> => {
@@ -1321,7 +1632,7 @@ const payIncome = async (payload: any): Promise<ApiResponse> => {
   if (!year || year < 2000) throw new ApiRequestError(400, 'Valid year is required');
   if (!Number.isFinite(amount) || amount <= 0) throw new ApiRequestError(400, 'Valid amount is required');
 
-  const [bedRes, activeAssignRes, existingPaymentRes] = await Promise.all([
+  const [bedRes, activeAssignRes] = await Promise.all([
     supabase.from('beds').select('base_price').eq('id', bedId).single(),
     supabase
       .from('bed_assignments')
@@ -1329,55 +1640,105 @@ const payIncome = async (payload: any): Promise<ApiResponse> => {
       .eq('bed_id', bedId)
       .is('ended_at', null)
       .maybeSingle(),
-    supabase
-      .from('income_payments')
-      .select('id, amount, created_at')
-      .eq('bed_id', bedId)
-      .eq('month', month)
-      .eq('year', year)
-      .maybeSingle(),
   ]);
   throwIfError(bedRes.error, 'Failed to load bed price');
   throwIfError(activeAssignRes.error, 'Failed to verify assignment');
-  throwIfError(existingPaymentRes.error, 'Failed to verify existing payment');
   if (!activeAssignRes.data) {
     throw new ApiRequestError(400, 'This bed is not currently assigned');
   }
-  const basePrice = Number(bedRes.data?.base_price ?? 0);
-  const existingAmount = Number(existingPaymentRes.data?.amount ?? 0);
-  const totalAmount = existingAmount + amount;
-  if (basePrice > 0 && totalAmount > basePrice) {
-    throw new ApiRequestError(400, `Amount exceeds remaining due. Remaining due is ${Math.max(basePrice - existingAmount, 0)}.`);
+
+  const billingStart = await getBillingStartForBed(bedId);
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  if (!isMonthPayable(month, year, billingStart, currentYear, currentMonth)) {
+    throw new ApiRequestError(400, 'Payment is not available for this month');
   }
 
-  const paymentPayload = {
-    bed_id: bedId,
-    assignment_id: activeAssignRes.data.id,
-    month,
-    year,
-    amount: totalAmount,
-    paid_at: nowIso(),
-    paid_by: current.id,
-    updated_at: nowIso(),
-  };
+  const basePrice = Number(bedRes.data?.base_price ?? 0);
+  const allPaymentsRes = await supabase
+    .from('income_payments')
+    .select('id, month, year, amount')
+    .eq('bed_id', bedId);
+  throwIfError(allPaymentsRes.error, 'Failed to load payment history');
 
-  const upsertRes = existingPaymentRes.data
-    ? await supabase
-        .from('income_payments')
-        .update(paymentPayload)
-        .eq('id', existingPaymentRes.data.id)
-        .select('*')
-        .single()
-    : await supabase
-        .from('income_payments')
-        .insert({
-          ...paymentPayload,
-          created_at: nowIso(),
-        })
-        .select('*')
-        .single();
-  throwIfError(upsertRes.error, 'Failed to mark payment');
-  return { data: { payment: upsertRes.data, message: 'Payment recorded' } };
+  const paymentsByKey = new Map<string, { id?: string; amount: number }>();
+  for (const payment of allPaymentsRes.data || []) {
+    paymentsByKey.set(`${payment.year}-${payment.month}`, {
+      id: payment.id,
+      amount: Number(payment.amount || 0),
+    });
+  }
+
+  const billableMonths = listBillableMonths(
+    billingStart.year,
+    billingStart.month,
+    currentYear,
+    currentMonth
+  );
+  const paidAmounts = new Map<string, number>(
+    Array.from(paymentsByKey.entries()).map(([key, value]) => [key, value.amount])
+  );
+  const totalDue = computeCumulativeDue(basePrice, billableMonths, paidAmounts);
+  if (totalDue <= 0) {
+    throw new ApiRequestError(400, 'No due amount remaining for this bed');
+  }
+  if (amount > totalDue) {
+    throw new ApiRequestError(400, `Amount exceeds total due. Total due is ${totalDue}.`);
+  }
+
+  let remaining = amount;
+  const appliedPayments: Array<{ year: number; month: number; amount: number }> = [];
+
+  for (const { year: billYear, month: billMonth } of billableMonths) {
+    if (remaining <= 0) break;
+    const key = `${billYear}-${billMonth}`;
+    const existing = paymentsByKey.get(key);
+    const paid = existing?.amount ?? 0;
+    const monthDue = Math.max(basePrice - paid, 0);
+    if (monthDue <= 0) continue;
+
+    const apply = Math.min(remaining, monthDue);
+    const newAmount = paid + apply;
+    const paymentPayload = {
+      bed_id: bedId,
+      assignment_id: activeAssignRes.data.id,
+      month: billMonth,
+      year: billYear,
+      amount: newAmount,
+      paid_at: nowIso(),
+      paid_by: current.id,
+      updated_at: nowIso(),
+    };
+
+    const upsertRes = existing?.id
+      ? await supabase
+          .from('income_payments')
+          .update(paymentPayload)
+          .eq('id', existing.id)
+          .select('*')
+          .single()
+      : await supabase
+          .from('income_payments')
+          .insert({
+            ...paymentPayload,
+            created_at: nowIso(),
+          })
+          .select('*')
+          .single();
+    throwIfError(upsertRes.error, 'Failed to record payment');
+
+    paymentsByKey.set(key, { id: upsertRes.data?.id ?? existing?.id, amount: newAmount });
+    appliedPayments.push({ year: billYear, month: billMonth, amount: newAmount });
+    remaining -= apply;
+  }
+
+  return {
+    data: {
+      appliedPayments,
+      message: 'Payment recorded and applied to oldest due months first',
+    },
+  };
 };
 
 const deleteIncomePayment = async (paymentId: string): Promise<ApiResponse> => {
@@ -1814,7 +2175,10 @@ const dispatch = async (method: Method, path: string, payload?: any): Promise<Ap
     return updateUserStatus(id, payload);
   }
 
-  if (method === 'GET' && path === '/hostels') return getHostels();
+  if (method === 'GET' && path.startsWith('/hostels')) {
+    const availableBedsOnly = getQueryParam(path, 'availableBedsOnly') === 'true';
+    return getHostels({ availableBedsOnly });
+  }
   if (method === 'POST' && path === '/hostels') return createHostel(payload);
   if (method === 'DELETE' && path.match(/^\/hostels\/[^/]+$/)) {
     const id = getPathParam(path, /^\/hostels\/([^/]+)$/);
@@ -1823,7 +2187,8 @@ const dispatch = async (method: Method, path: string, payload?: any): Promise<Ap
   }
   if (method === 'GET' && path.startsWith('/units') && !path.match(/^\/units\/[^/]+/)) {
     const hostelId = getQueryParam(path, 'hostelId');
-    if (hostelId) return getUnits(hostelId);
+    const availableBedsOnly = getQueryParam(path, 'availableBedsOnly') === 'true';
+    if (hostelId) return getUnits(hostelId, { availableBedsOnly });
     return getAllUnits();
   }
   if (method === 'POST' && path === '/units') return createUnit(payload);
@@ -1837,15 +2202,21 @@ const dispatch = async (method: Method, path: string, payload?: any): Promise<Ap
     if (!id) throw new ApiRequestError(404, 'Not found');
     return deleteUnit(id);
   }
-  if (method === 'GET' && path.match(/^\/rooms\/[^/]+\/beds$/)) {
-    const roomId = getPathParam(path, /^\/rooms\/([^/]+)\/beds$/);
+  if (method === 'GET' && path.match(/^\/rooms\/[^/]+\/beds/)) {
+    const roomId = getPathParam(path, /^\/rooms\/([^/]+)\/beds/);
     if (!roomId) throw new ApiRequestError(404, 'Not found');
-    return getBeds(roomId);
+    const availableOnly = getQueryParam(path, 'availableOnly') === 'true';
+    return getBeds(roomId, { availableOnly });
   }
   if (method === 'GET' && path.startsWith('/rooms') && path !== '/rooms/my-room') {
     const unitId = getQueryParam(path, 'unitId');
     const hostelId = getQueryParam(path, 'hostelId');
-    return getRooms({ unitId: unitId || undefined, hostelId: hostelId || undefined });
+    const availableBedsOnly = getQueryParam(path, 'availableBedsOnly') === 'true';
+    return getRooms({
+      unitId: unitId || undefined,
+      hostelId: hostelId || undefined,
+      availableBedsOnly,
+    });
   }
   if (method === 'POST' && path === '/rooms') return createRoom(payload);
   if (method === 'PATCH' && path.match(/^\/rooms\/[^/]+$/) && !path.includes('/beds')) {

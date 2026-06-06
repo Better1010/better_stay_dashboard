@@ -19,7 +19,6 @@ export default function BuildingDetailPage() {
   const [units, setUnits] = useState<any[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
   const [beds, setBeds] = useState<any[]>([]);
-  const [registeredUsers, setRegisteredUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
@@ -32,7 +31,6 @@ export default function BuildingDetailPage() {
   const [editUnitFloor, setEditUnitFloor] = useState(1);
   const [roomModal, setRoomModal] = useState(false);
   const [bedModal, setBedModal] = useState(false);
-  const [assignModal, setAssignModal] = useState<{ bedId: string; bedNumber: string } | null>(null);
   const [viewAssigneeBed, setViewAssigneeBed] = useState<{
     bedNumber: string;
     assigneeName: string;
@@ -51,29 +49,19 @@ export default function BuildingDetailPage() {
   const [bedNumber, setBedNumber] = useState('');
   const [bedBasePrice, setBedBasePrice] = useState(0);
   const [bedPictureFile, setBedPictureFile] = useState<File | null>(null);
-  const [selectedRegisteredUserId, setSelectedRegisteredUserId] = useState('');
-  const [editBedModal, setEditBedModal] = useState<{ id: string; bedNumber: string; basePrice: number; pictureUrl: string; assigneeName: string } | null>(null);
+  const [editBedModal, setEditBedModal] = useState<{ id: string; bedNumber: string; basePrice: number; pictureUrl: string } | null>(null);
   const [editBedNumber, setEditBedNumber] = useState('');
   const [editBedBasePrice, setEditBedBasePrice] = useState(0);
   const [editBedPictureFile, setEditBedPictureFile] = useState<File | null>(null);
   const [editBedPictureUrl, setEditBedPictureUrl] = useState('');
-  const [editAssigneeName, setEditAssigneeName] = useState('');
   const [uploading, setUploading] = useState(false);
   const [refreshingTable, setRefreshingTable] = useState(false);
-
-  const refreshRegisteredUsers = async () => {
-    const r = await api.get('/registered-users').catch(() => null);
-    if (!r) return false;
-    setRegisteredUsers(r.data?.users ?? []);
-    return true;
-  };
 
   useEffect(() => {
     if (!buildingId) return;
     Promise.all([
       api.get('/hostels').then((r) => (r.data.hostels || []).find((h: any) => (h.id || h._id) === buildingId)),
       api.get(`/units?hostelId=${buildingId}`).then((r) => r.data.units || []),
-      refreshRegisteredUsers(),
     ])
       .then(([b, u]) => {
         setBuilding(b || null);
@@ -275,37 +263,6 @@ export default function BuildingDetailPage() {
     }
   };
 
-  const handleAssignBed = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!assignModal || !selectedRegisteredUserId) {
-      alert('Please select a registered user.');
-      return;
-    }
-    try {
-      setUploading(true);
-      await api.post(`/beds/${assignModal.bedId}/assign`, {
-        registeredUserId: selectedRegisteredUserId,
-        price: 0,
-      });
-      setAssignModal(null);
-      setSelectedRegisteredUserId('');
-      await Promise.all([refreshBeds(), refreshRegisteredUsers()]);
-    } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to assign bed');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleUnassign = async (bedId: string) => {
-    try {
-      await api.patch(`/beds/${bedId}/unassign`);
-      await Promise.all([refreshBeds(), refreshRegisteredUsers()]);
-    } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to unassign');
-    }
-  };
-
   const openEditBed = (b: any) => {
     const bedNum = String(b.bedNumber ?? '').toUpperCase();
     setEditBedModal({
@@ -313,13 +270,11 @@ export default function BuildingDetailPage() {
       bedNumber: bedNum,
       basePrice: b.basePrice,
       pictureUrl: b.pictureUrl || '',
-      assigneeName: b.assigneeName || '',
     });
     setEditBedNumber(bedNum);
     setEditBedBasePrice(b.basePrice);
     setEditBedPictureUrl(b.pictureUrl || '');
     setEditBedPictureFile(null);
-    setEditAssigneeName(b.assigneeName || '');
   };
 
   const handleEditBed = async (e: React.FormEvent) => {
@@ -335,7 +290,6 @@ export default function BuildingDetailPage() {
         bedNumber: editBedNumber.trim().toUpperCase(),
         basePrice: editBedBasePrice,
         pictureUrl: pictureUrl || null,
-        assigneeName: editAssigneeName.trim() || null,
       });
       setEditBedModal(null);
       setEditBedPictureFile(null);
@@ -557,7 +511,7 @@ export default function BuildingDetailPage() {
                   {beds.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="px-4 py-6 text-center text-gray-500 text-sm">
-                        No beds. Add beds and assign to residents.
+                        No beds. Add beds here, then assign users from the Register User page.
                       </td>
                     </tr>
                   ) : (
@@ -599,27 +553,6 @@ export default function BuildingDetailPage() {
                           <button type="button" onClick={() => openEditBed(b)} className={editActionButtonClass}>
                             Edit
                           </button>
-                          {(b.residentId || b.assigneeName) ? (
-                            <button
-                              type="button"
-                              onClick={() => handleUnassign(b.id)}
-                              className="text-sm font-medium text-secondary hover:text-secondary/80"
-                            >
-                              Unassign
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                setSelectedRegisteredUserId('');
-                                await refreshRegisteredUsers();
-                                setAssignModal({ bedId: b.id, bedNumber: b.bedNumber });
-                              }}
-                              className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
-                            >
-                              Assign
-                            </button>
-                          )}
                         </td>
                       </tr>
                     ))
@@ -862,16 +795,6 @@ export default function BuildingDetailPage() {
                     </div>
                   ) : null}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-900">Assigned to</label>
-                  <input
-                    type="text"
-                    value={editAssigneeName}
-                    onChange={(e) => setEditAssigneeName(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400"
-                    placeholder="Assignee name"
-                  />
-                </div>
                 <div className="flex gap-2 justify-end pt-2">
                   <button type="button" onClick={() => { setEditBedModal(null); setEditBedPictureFile(null); }} className="px-4 py-2 text-gray-600">
                     Cancel
@@ -916,53 +839,6 @@ export default function BuildingDetailPage() {
                   </button>
                   <button type="submit" className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90">
                     Save
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {assignModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-xl max-h-[90vh] overflow-y-auto">
-              <h4 className="text-lg font-semibold mb-2 text-gray-900">Assign bed {assignModal.bedNumber}</h4>
-              <form onSubmit={handleAssignBed} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-900">Select registered user</label>
-                  <select
-                    value={selectedRegisteredUserId}
-                    onChange={(e) => setSelectedRegisteredUserId(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
-                    required
-                  >
-                    <option value="">Select user</option>
-                    {registeredUsers.map((u: any) => (
-                      <option key={u.id} value={u.id} disabled={Boolean(u.isAssigned)}>
-                        {u.name} {u.mobileNumber ? `(${u.mobileNumber})` : ''}{u.isAssigned ? ' - Already assigned' : ''}
-                      </option>
-                    ))}
-                  </select>
-                  {registeredUsers.length === 0 && (
-                    <p className="mt-1 text-xs text-red-600">
-                      No registered users found. Add users from Register User page first.
-                    </p>
-                  )}
-                  {registeredUsers.some((u: any) => u.isAssigned) && (
-                    <p className="mt-1 text-xs text-gray-500">
-                    </p>
-                  )}
-                </div>
-                <div className="flex gap-2 justify-end">
-                  <button
-                    type="button"
-                    onClick={() => { setAssignModal(null); setSelectedRegisteredUserId(''); }}
-                    className="px-4 py-2 text-gray-600"
-                  >
-                    Cancel
-                  </button>
-                  <button type="submit" disabled={uploading} className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90 disabled:opacity-50">
-                    {uploading ? 'Uploading...' : 'Assign'}
                   </button>
                 </div>
               </form>

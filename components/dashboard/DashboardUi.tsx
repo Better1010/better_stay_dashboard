@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import type { LucideIcon } from 'lucide-react';
+import { useState } from 'react';
+import { Eye, EyeOff, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function DashboardSpinner({ label = 'Loading…' }: { label?: string }) {
@@ -38,6 +39,22 @@ type StatCardProps = {
   href?: string;
 };
 
+const hiddenAmountLabels = new Set([
+  'total income',
+  'total investment',
+  'net profit',
+  'net loss',
+  'break-even',
+]);
+
+function getHiddenAmountText(value: string | number) {
+  if (typeof value === 'string' && value.trim().startsWith('৳')) {
+    return '৳••••••';
+  }
+
+  return '••••••';
+}
+
 export function StatCard({
   label,
   value,
@@ -47,14 +64,40 @@ export function StatCard({
   iconWrapperClassName,
   href,
 }: StatCardProps) {
+  const shouldHideAmount = hiddenAmountLabels.has(label.toLowerCase());
+  const [amountVisible, setAmountVisible] = useState(!shouldHideAmount);
+  const displayedValue = shouldHideAmount && !amountVisible ? getHiddenAmountText(value) : value;
+
+  const toggleAmountVisibility = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setAmountVisible((current) => !current);
+  };
+
   const inner = (
     <>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-muted-foreground">{label}</p>
-          <p className="mt-2 text-lg font-semibold tracking-tight text-card-foreground tabular-nums sm:text-xl">
-            {value}
-          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <p className="text-lg font-semibold tracking-tight text-card-foreground tabular-nums sm:text-xl">
+              {displayedValue}
+            </p>
+            {shouldHideAmount ? (
+              <button
+                type="button"
+                onClick={toggleAmountVisibility}
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                aria-label={amountVisible ? `Hide ${label}` : `Show ${label}`}
+              >
+                {amountVisible ? (
+                  <EyeOff className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+                ) : (
+                  <Eye className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+                )}
+              </button>
+            ) : null}
+          </div>
           {sublabel ? <p className="mt-1 text-xs text-muted-foreground">{sublabel}</p> : null}
         </div>
         <div
