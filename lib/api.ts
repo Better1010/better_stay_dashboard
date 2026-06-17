@@ -1907,7 +1907,7 @@ const getDeposits = async (queryParams?: { search?: string }): Promise<ApiRespon
 
   const depRes = await supabase
     .from('deposits')
-    .select('id, registered_user_id, amount, created_at')
+    .select('id, registered_user_id, amount, cleared, created_at')
     .order('created_at', { ascending: false });
   throwIfError(depRes.error, 'Failed to load deposits');
 
@@ -2002,6 +2002,7 @@ const getDeposits = async (queryParams?: { search?: string }): Promise<ApiRespon
         clientName: user?.name || 'Unknown',
         mobileNumber: user?.mobile_number || '',
         amount: Number(d.amount || 0),
+        cleared: Boolean(d.cleared),
         createdAt: d.created_at,
         bedAssignmentStatus,
         assignmentLocations,
@@ -2019,7 +2020,9 @@ const getDeposits = async (queryParams?: { search?: string }): Promise<ApiRespon
     })
     .filter((row: any) => (search ? row.clientName.toLowerCase().includes(search) : true));
 
-  const totalDeposit = rows.reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
+  const totalDeposit = rows
+    .filter((row: any) => !row.cleared)
+    .reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
   return { data: { deposits: rows, totalDeposit } };
 };
 
@@ -2052,23 +2055,34 @@ const createDeposit = async (payload: any): Promise<ApiResponse> => {
 
 const updateDeposit = async (id: string, payload: any): Promise<ApiResponse> => {
   requireAuthUser();
-  const registeredUserId = payload?.registeredUserId ? String(payload.registeredUserId) : '';
-  const amount = Number(payload?.amount);
+  const updatePayload: Record<string, unknown> = { updated_at: nowIso() };
 
-  if (!registeredUserId) throw new ApiRequestError(400, 'registeredUserId is required');
-  if (!Number.isFinite(amount) || amount <= 0) throw new ApiRequestError(400, 'Valid amount is required');
+  if (payload?.registeredUserId !== undefined) {
+    const registeredUserId = String(payload.registeredUserId);
+    if (!registeredUserId) throw new ApiRequestError(400, 'registeredUserId is required');
+    const userRes = await supabase.from('registered_users').select('id').eq('id', registeredUserId).single();
+    throwIfError(userRes.error, 'Registered user not found');
+    if (!userRes.data) throw new ApiRequestError(404, 'Registered user not found');
+    updatePayload.registered_user_id = registeredUserId;
+  }
 
-  const userRes = await supabase.from('registered_users').select('id').eq('id', registeredUserId).single();
-  throwIfError(userRes.error, 'Registered user not found');
-  if (!userRes.data) throw new ApiRequestError(404, 'Registered user not found');
+  if (payload?.amount !== undefined) {
+    const amount = Number(payload.amount);
+    if (!Number.isFinite(amount) || amount <= 0) throw new ApiRequestError(400, 'Valid amount is required');
+    updatePayload.amount = amount;
+  }
+
+  if (payload?.cleared !== undefined) {
+    updatePayload.cleared = Boolean(payload.cleared);
+  }
+
+  if (Object.keys(updatePayload).length === 1) {
+    throw new ApiRequestError(400, 'No valid fields to update');
+  }
 
   const res = await supabase
     .from('deposits')
-    .update({
-      registered_user_id: registeredUserId,
-      amount,
-      updated_at: nowIso(),
-    })
+    .update(updatePayload)
     .eq('id', id)
     .select('*')
     .single();
