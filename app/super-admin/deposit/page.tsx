@@ -27,6 +27,7 @@ type DepositRow = {
   clientName: string;
   mobileNumber: string;
   amount: number;
+  cleared: boolean;
   createdAt: string;
   bedAssignmentStatus: 'assigned' | 'unassigned';
   assignmentLocations: AssignmentLocation[];
@@ -79,6 +80,7 @@ export default function DepositPage() {
   const [editRegisteredUserId, setEditRegisteredUserId] = useState('');
   const [editAmount, setEditAmount] = useState('');
   const [editSaving, setEditSaving] = useState(false);
+  const [clearingId, setClearingId] = useState<string | null>(null);
 
   const fetchRegisteredUsers = async () => {
     try {
@@ -197,6 +199,20 @@ export default function DepositPage() {
     }
   };
 
+  const handleClearDeposit = async (deposit: DepositRow) => {
+    if (deposit.cleared) return;
+    if (!confirm(`Mark deposit for ${deposit.clientName} as cleared?`)) return;
+    try {
+      setClearingId(deposit.id);
+      await api.patch(`/deposits/${deposit.id}`, { cleared: true });
+      fetchData(search);
+    } catch (err: unknown) {
+      alert(getErrorMessage(err, 'Failed to mark deposit as cleared'));
+    } finally {
+      setClearingId(null);
+    }
+  };
+
   const formatDate = (iso: string) => {
     try {
       return new Date(iso).toLocaleString();
@@ -289,16 +305,35 @@ export default function DepositPage() {
                         ৳{Number(d.amount).toFixed(2)}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEditDeposit(d);
-                          }}
-                          className="text-sm font-medium text-secondary hover:text-secondary/80"
-                        >
-                          Edit
-                        </button>
+                        <div className="inline-flex items-center justify-end gap-3">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditDeposit(d);
+                            }}
+                            className="text-sm font-medium text-secondary hover:text-secondary/80"
+                          >
+                            Edit
+                          </button>
+                          {d.cleared ? (
+                            <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
+                              Cleared
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleClearDeposit(d);
+                              }}
+                              disabled={clearingId === d.id}
+                              className="text-sm font-medium text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+                            >
+                              {clearingId === d.id ? 'Clearing…' : 'Clearance'}
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -523,6 +558,19 @@ export default function DepositPage() {
                       <div className="flex justify-between gap-2">
                         <span className="text-gray-500">Recorded</span>
                         <span className="text-gray-900">{formatDate(detailDeposit.createdAt)}</span>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <span className="text-gray-500">Clearance</span>
+                        <span
+                          className={cn(
+                            'rounded-full px-2.5 py-0.5 text-xs font-semibold',
+                            detailDeposit.cleared
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-amber-100 text-amber-700',
+                          )}
+                        >
+                          {detailDeposit.cleared ? 'Cleared' : 'Pending'}
+                        </span>
                       </div>
                     </div>
                   </div>
