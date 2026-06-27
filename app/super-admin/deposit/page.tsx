@@ -205,9 +205,17 @@ export default function DepositPage() {
     try {
       setClearingId(deposit.id);
       await api.patch(`/deposits/${deposit.id}`, { cleared: true });
+      setDeposits((prev) =>
+        prev.map((d) => (d.id === deposit.id ? { ...d, cleared: true } : d)),
+      );
+      setTotalDeposit((prev) => Math.max(0, prev - Number(deposit.amount || 0)));
+      if (detailDeposit?.id === deposit.id) {
+        setDetailDeposit((prev) => (prev ? { ...prev, cleared: true } : prev));
+      }
       fetchData(search);
     } catch (err: unknown) {
       alert(getErrorMessage(err, 'Failed to mark deposit as cleared'));
+      fetchData(search);
     } finally {
       setClearingId(null);
     }

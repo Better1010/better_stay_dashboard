@@ -1990,37 +1990,38 @@ const getDeposits = async (queryParams?: { search?: string }): Promise<ApiRespon
     }
   }
 
-  const rows = deposits
-    .map((d: any) => {
-      const user = usersById.get(d.registered_user_id);
-      const assignmentLocations = locationsByUserId.get(d.registered_user_id) || [];
-      const bedAssignmentStatus = assignmentLocations.length > 0 ? 'assigned' : 'unassigned';
+  const mapDepositRow = (d: any) => {
+    const user = usersById.get(d.registered_user_id);
+    const assignmentLocations = locationsByUserId.get(d.registered_user_id) || [];
+    const bedAssignmentStatus = assignmentLocations.length > 0 ? 'assigned' : 'unassigned';
 
-      return {
-        id: d.id,
-        registeredUserId: d.registered_user_id,
-        clientName: user?.name || 'Unknown',
-        mobileNumber: user?.mobile_number || '',
-        amount: Number(d.amount || 0),
-        cleared: Boolean(d.cleared),
-        createdAt: d.created_at,
-        bedAssignmentStatus,
-        assignmentLocations,
-        userDetail: user
-          ? {
-              id: user.id,
-              name: user.name,
-              mobileNumber: user.mobile_number ?? '',
-              nidFrontUrl: user.nid_picture_front_url ?? '',
-              nidBackUrl: user.nid_picture_back_url ?? '',
-              createdAt: user.created_at,
-            }
-          : null,
-      };
-    })
-    .filter((row: any) => (search ? row.clientName.toLowerCase().includes(search) : true));
+    return {
+      id: d.id,
+      registeredUserId: d.registered_user_id,
+      clientName: user?.name || 'Unknown',
+      mobileNumber: user?.mobile_number || '',
+      amount: Number(d.amount || 0),
+      cleared: Boolean(d.cleared),
+      createdAt: d.created_at,
+      bedAssignmentStatus,
+      assignmentLocations,
+      userDetail: user
+        ? {
+            id: user.id,
+            name: user.name,
+            mobileNumber: user.mobile_number ?? '',
+            nidFrontUrl: user.nid_picture_front_url ?? '',
+            nidBackUrl: user.nid_picture_back_url ?? '',
+            createdAt: user.created_at,
+          }
+        : null,
+    };
+  };
 
-  const totalDeposit = rows
+  const allRows = deposits.map(mapDepositRow);
+  const rows = allRows.filter((row: any) => (search ? row.clientName.toLowerCase().includes(search) : true));
+
+  const totalDeposit = allRows
     .filter((row: any) => !row.cleared)
     .reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
   return { data: { deposits: rows, totalDeposit } };
