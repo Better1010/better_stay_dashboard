@@ -3,6 +3,7 @@
 import DashboardLayout from '@/components/DashboardLayout';
 import { useEffect, useMemo, useState } from 'react';
 import api from '@/lib/api';
+import { formatDateDDMMYYYY, isoToDDMMYYYY, parseDDMMYYYYToISO } from '@/lib/utils';
 
 const editActionButtonClass =
   'border-0 bg-transparent p-0 text-sm font-medium text-secondary shadow-none hover:text-secondary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary/35 focus-visible:ring-offset-0';
@@ -53,7 +54,7 @@ export default function SuperAdminExpensesPage() {
   const [expenseName, setExpenseName] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [amount, setAmount] = useState('');
-  const [expenseDate, setExpenseDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [expenseDate, setExpenseDate] = useState(() => formatDateDDMMYYYY(new Date()));
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const [filterBuildingId, setFilterBuildingId] = useState('');
@@ -99,7 +100,7 @@ export default function SuperAdminExpensesPage() {
     setEditExpenseName(exp.expenseName);
     setEditCategoryId(exp.categoryId);
     setEditAmount(String(exp.amount));
-    setEditExpenseDate(exp.expenseDate ? exp.expenseDate.slice(0, 10) : '');
+    setEditExpenseDate(exp.expenseDate ? isoToDDMMYYYY(exp.expenseDate) : '');
     if (exp.hostelId) {
       api.get(`/units?hostelId=${exp.hostelId}`).then((r) => setEditUnits(r.data?.units ?? [])).catch(() => setEditUnits([]));
     } else {
@@ -110,12 +111,17 @@ export default function SuperAdminExpensesPage() {
   const handleEditExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editExpense) return;
+    const parsedDate = parseDDMMYYYYToISO(editExpenseDate);
+    if (!parsedDate) {
+      alert('Please enter a valid date in DD/MM/YYYY format');
+      return;
+    }
     try {
       await api.patch(`/expenses/${editExpense.id}`, {
         expenseName: editExpenseName.trim(),
         categoryId: editCategoryId,
         amount: Number(editAmount),
-        expenseDate: editExpenseDate,
+        expenseDate: parsedDate,
         unitId: editUnitId,
       });
       setEditExpense(null);
@@ -231,8 +237,13 @@ export default function SuperAdminExpensesPage() {
 
   const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addBuildingId || !unitId || !categoryId || !amount || !expenseDate) {
-      alert('Please select Building, Unit, Category, Amount and Date');
+    const parsedDate = parseDDMMYYYYToISO(expenseDate);
+    if (!addBuildingId || !unitId || !categoryId || !amount || !parsedDate) {
+      if (!parsedDate && addBuildingId && unitId && categoryId && amount) {
+        alert('Please enter a valid date in DD/MM/YYYY format');
+      } else {
+        alert('Please select Building, Unit, Category, Amount and Date');
+      }
       return;
     }
     try {
@@ -241,18 +252,18 @@ export default function SuperAdminExpensesPage() {
         expenseName: expenseName.trim(),
         categoryId,
         amount: Number(amount),
-        expenseDate,
+        expenseDate: parsedDate,
       });
       setExpenseName('');
       setAmount('');
-      setExpenseDate(new Date().toISOString().slice(0, 10));
+      setExpenseDate(formatDateDDMMYYYY(new Date()));
       loadData();
     } catch (err: unknown) {
       alert(getErrorMessage(err, 'Failed to add expense'));
     }
   };
 
-  const formatDate = (d: string) => (d ? new Date(d).toLocaleDateString() : '');
+  const formatDate = (d: string) => (d ? formatDateDDMMYYYY(d) : '');
 
   const filteredExpenses = expenses.filter(
     (e) =>
@@ -438,9 +449,11 @@ export default function SuperAdminExpensesPage() {
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">Date</label>
               <input
-                type="date"
+                type="text"
+                inputMode="numeric"
                 value={expenseDate}
                 onChange={(e) => setExpenseDate(e.target.value)}
+                placeholder="DD/MM/YYYY"
                 className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                 required
               />
@@ -698,9 +711,11 @@ export default function SuperAdminExpensesPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-900">Date</label>
                   <input
-                    type="date"
+                    type="text"
+                    inputMode="numeric"
                     value={editExpenseDate}
                     onChange={(ev) => setEditExpenseDate(ev.target.value)}
+                    placeholder="DD/MM/YYYY"
                     className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25"
                     required
                   />

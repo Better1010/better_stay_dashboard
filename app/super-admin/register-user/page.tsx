@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import api from '@/lib/api';
 import { uploadNidPicture } from '@/lib/supabase';
@@ -109,6 +109,7 @@ export default function RegisterUserPage() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [users, setUsers] = useState<RegisteredUserRow[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
+  const [userSearch, setUserSearch] = useState('');
   const [hostels, setHostels] = useState<HostelOption[]>([]);
   const [units, setUnits] = useState<UnitOption[]>([]);
   const [rooms, setRooms] = useState<RoomOption[]>([]);
@@ -539,6 +540,12 @@ export default function RegisterUserPage() {
     }
   }, [loadAvailableHostels, selectedBedId, selectedHostelId, selectedRoomId, selectedUnitId]);
 
+  const filteredUsers = useMemo(() => {
+    const query = userSearch.trim().toLowerCase();
+    if (!query) return users;
+    return users.filter((u) => u.name.toLowerCase().includes(query));
+  }, [users, userSearch]);
+
   const toggleUserStatus = async (user: RegisteredUserRow) => {
     const nextStatus = user.status === 'inactive' ? 'active' : 'inactive';
     try {
@@ -755,16 +762,27 @@ export default function RegisterUserPage() {
         </div>
 
         <section>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-end sm:justify-between">
             <h3 className="text-lg font-semibold text-gray-900">Registered users</h3>
-            <button
-              type="button"
-              onClick={() => fetchUsers()}
-              disabled={usersLoading}
-              className="text-sm font-medium text-indigo-600 hover:text-indigo-800 disabled:opacity-50 self-start sm:self-auto"
-            >
-              Refresh list
-            </button>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="w-full sm:w-64">
+                <input
+                  type="text"
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  placeholder="Type user name..."
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => fetchUsers()}
+                disabled={usersLoading}
+                className="text-sm font-medium text-indigo-600 hover:text-indigo-800 disabled:opacity-50 self-start sm:self-end sm:mb-0.5"
+              >
+                Refresh list
+              </button>
+            </div>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
@@ -813,14 +831,16 @@ export default function RegisterUserPage() {
                         Loading users…
                       </td>
                     </tr>
-                  ) : users.length === 0 ? (
+                  ) : filteredUsers.length === 0 ? (
                     <tr>
                       <td colSpan={11} className="px-4 py-10 text-center text-sm text-gray-500">
-                        No registered users yet. Add someone using the form above.
+                        {users.length === 0
+                          ? 'No registered users yet. Add someone using the form above.'
+                          : 'No users match your search.'}
                       </td>
                     </tr>
                   ) : (
-                    users.map((u) => (
+                    filteredUsers.map((u) => (
                       <tr key={u.id}>
                         <td className="px-4 py-3 text-sm font-medium text-gray-900">{u.name}</td>
                         <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{u.mobileNumber || '—'}</td>
