@@ -1,0 +1,19 @@
+# Netlify config for Next.js (App Router)
+# Site settings in Netlify UI should also use:
+# - Build command: npm run build
+# - Publish directory: .next  (plugin handles this)
+# - Production branch: main
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# SPA-style fallback is NOT needed with the Next.js plugin.
+# Keep redirects out of here so Next routing works correctly.
