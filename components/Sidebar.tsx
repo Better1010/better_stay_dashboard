@@ -110,8 +110,8 @@ export default function Sidebar({ role }: SidebarProps) {
   const config = roleConfig[role];
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
-      <div className="border-b border-sidebar-border">
+    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+      <div className="shrink-0 border-b border-sidebar-border">
         <Link
           href={dashboardPathByRole[role]}
           className="block bg-white px-4 py-5 transition-opacity hover:opacity-95"
@@ -129,7 +129,7 @@ export default function Sidebar({ role }: SidebarProps) {
           {config.label}
         </p>
       </div>
-      <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
+      <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-3">
         {config.items.map((item) => {
           const active = isNavActive(pathname, item.path, role);
           const Icon = item.icon;

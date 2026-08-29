@@ -51,10 +51,10 @@ export default function DashboardLayout({ children, requiredRole }: DashboardLay
   }
 
   return (
-    <div className="flex min-h-screen bg-muted/40">
+    <div className="flex h-screen overflow-hidden bg-muted/40">
       <Sidebar role={user.role} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-10 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="z-10 shrink-0 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
           <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <div className="min-w-0">
               <h1 className="truncate text-lg font-semibold tracking-tight text-foreground sm:text-xl">
@@ -80,7 +80,7 @@ export default function DashboardLayout({ children, requiredRole }: DashboardLay
             </div>
           </div>
         </header>
-        <main className="flex-1 px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+        <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">{children}</main>
       </div>
     </div>
   );

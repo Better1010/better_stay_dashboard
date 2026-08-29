@@ -4,8 +4,9 @@ import DashboardLayout from '@/components/DashboardLayout';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
 import api from '@/lib/api';
+import { Loader2 } from 'lucide-react';
+import { notifyError } from '@/lib/notify';
 import { uploadBedPicture } from '@/lib/supabase';
 
 const editActionButtonClass =
@@ -117,7 +118,7 @@ export default function BuildingDetailPage() {
         refreshed = await refreshUnits();
       }
       if (!refreshed) {
-        alert('Failed to refresh the table right now.');
+        notifyError('Failed to refresh the table right now.');
       }
     } finally {
       setRefreshingTable(false);
@@ -144,7 +145,7 @@ export default function BuildingDetailPage() {
       setUnitFloor(1);
       refreshUnits();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to add unit');
+      notifyError(err.response?.data?.message || 'Failed to add unit');
     }
   };
 
@@ -167,7 +168,7 @@ export default function BuildingDetailPage() {
       setEditUnitModal(null);
       refreshUnits();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to update unit');
+      notifyError(err.response?.data?.message || 'Failed to update unit');
     }
   };
 
@@ -185,7 +186,7 @@ export default function BuildingDetailPage() {
       setRoomNumber('');
       refreshRooms();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to add room');
+      notifyError(err.response?.data?.message || 'Failed to add room');
     }
   };
 
@@ -207,7 +208,7 @@ export default function BuildingDetailPage() {
       setEditRoomModal(null);
       refreshRooms();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to update room');
+      notifyError(err.response?.data?.message || 'Failed to update room');
     }
   };
 
@@ -216,7 +217,7 @@ export default function BuildingDetailPage() {
     if (!selectedRoomId) return;
     const num = bedNumber.trim().toUpperCase();
     if (!num) {
-      alert('Please enter a bed number (e.g. B1, B2).');
+      notifyError('Please enter a bed number (e.g. B1, B2).');
       return;
     }
     try {
@@ -232,7 +233,7 @@ export default function BuildingDetailPage() {
           await api.patch(`/beds/${bedId}`, { pictureUrl });
         } catch (uploadErr: unknown) {
           const msg = uploadErr instanceof Error ? uploadErr.message : 'Unknown upload error';
-          alert(`Bed created but image upload failed: ${msg}`);
+          notifyError(`Bed created but image upload failed: ${msg}`);
         }
       }
 
@@ -257,7 +258,7 @@ export default function BuildingDetailPage() {
         setBeds((prev) => [...prev, newRow]);
       }
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to add bed');
+      notifyError(err.response?.data?.message || 'Failed to add bed');
     } finally {
       setUploading(false);
     }
@@ -296,7 +297,7 @@ export default function BuildingDetailPage() {
       refreshBeds();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : (err && typeof err === 'object' && 'response' in err ? (err as any).response?.data?.message : null) || 'Failed to update bed';
-      alert(msg);
+      notifyError(msg);
     } finally {
       setUploading(false);
     }

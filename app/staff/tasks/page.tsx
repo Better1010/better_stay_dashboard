@@ -3,6 +3,7 @@
 import DashboardLayout from '@/components/DashboardLayout';
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
+import { notifyError } from '@/lib/notify';
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<any[]>([]);
@@ -29,7 +30,7 @@ export default function TasksPage() {
       fetchTasks();
     } catch (error) {
       console.error('Error updating status:', error);
-      alert('Failed to update status');
+      notifyError('Failed to update status');
     }
   };
 

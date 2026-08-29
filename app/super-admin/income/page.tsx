@@ -3,9 +3,18 @@
 import DashboardLayout from '@/components/DashboardLayout';
 import { useEffect, useMemo, useState } from 'react';
 import api from '@/lib/api';
+import { confirmAction, notifyError, notifySuccess } from '@/lib/notify';
+
+const editBtnClass =
+  'border-0 bg-transparent p-0 text-sm font-medium text-secondary shadow-none hover:text-secondary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary/35 focus-visible:ring-offset-0';
 
 type IncomeRow = {
   bedId: string;
+  assignmentId?: string;
+  registeredUserId?: string;
+  hostelId?: string;
+  unitId?: string;
+  roomId?: string;
   bedNumber: string;
   basePrice: number;
   roomNumber: string;
@@ -20,6 +29,45 @@ type IncomeRow = {
   billingStartMonth: number;
   billingStartYear: number;
 };
+
+type UnitOption = {
+  id: string;
+  unitNumber: string;
+};
+
+type RoomOption = {
+  id: string;
+  roomNumber: string;
+};
+
+type BedOption = {
+  id: string;
+  bedNumber: string;
+  basePrice?: number;
+  isOccupied?: boolean;
+  registeredUserId?: string | null;
+  assigneeName?: string | null;
+};
+
+function getErrorMessage(err: unknown, fallback: string): string {
+  if (err && typeof err === 'object' && 'response' in err) {
+    const res = (err as { response?: { data?: { message?: string } } }).response;
+    if (res?.data?.message && typeof res.data.message === 'string') return res.data.message;
+  }
+  return fallback;
+}
+
+function mergeRooms(items: RoomOption[], current?: { id: string; roomNumber: string } | null) {
+  if (!current?.id) return items;
+  if (items.some((item) => item.id === current.id)) return items;
+  return [{ id: current.id, roomNumber: current.roomNumber }, ...items];
+}
+
+function mergeBeds(items: BedOption[], current?: { id: string; bedNumber: string; basePrice?: number } | null) {
+  if (!current?.id) return items;
+  if (items.some((item) => item.id === current.id)) return items;
+  return [{ id: current.id, bedNumber: current.bedNumber, basePrice: current.basePrice }, ...items];
+}
 
 type PaymentMonthSummary = {
   month: number;
@@ -79,6 +127,20 @@ export default function SuperAdminIncomePage() {
   const [billingStartYear, setBillingStartYear] = useState(now.getFullYear());
   const [payableEndMonth, setPayableEndMonth] = useState(now.getMonth() + 1);
   const [payableEndYear, setPayableEndYear] = useState(now.getFullYear());
+  const [editRow, setEditRow] = useState<IncomeRow | null>(null);
+  const [editHostelId, setEditHostelId] = useState('');
+  const [editUnitId, setEditUnitId] = useState('');
+  const [editRoomId, setEditRoomId] = useState('');
+  const [editBedId, setEditBedId] = useState('');
+  const [editClientName, setEditClientName] = useState('');
+  const [editMobile, setEditMobile] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [editStatus, setEditStatus] = useState<'paid' | 'unpaid'>('unpaid');
+  const [editUnits, setEditUnits] = useState<UnitOption[]>([]);
+  const [editRooms, setEditRooms] = useState<RoomOption[]>([]);
+  const [editBeds, setEditBeds] = useState<BedOption[]>([]);
+  const [editOptionsLoading, setEditOptionsLoading] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
 
   const years = useMemo(() => {
     const start = now.getFullYear() - 3;
@@ -193,20 +255,20 @@ export default function SuperAdminIncomePage() {
     e.preventDefault();
     if (!payModal) return;
     if (!isSelectedMonthPayable) {
-      alert('Payment is not available for this month.');
+      notifyError('Payment is not available for this month.');
       return;
     }
     const remainingTotalDue = Number(payModal.totalDue || 0);
     if (remainingTotalDue <= 0) {
-      alert('No due amount remaining for this bed.');
+      notifyError('No due amount remaining for this bed.');
       return;
     }
     if (!Number.isFinite(payAmount) || payAmount <= 0) {
-      alert('Please enter a valid payment amount.');
+      notifyError('Please enter a valid payment amount.');
       return;
     }
     if (payAmount > remainingTotalDue) {
-      alert(`Entered amount is greater than total due of ৳${remainingTotalDue.toFixed(2)}.`);
+      notifyError(`Entered amount is greater than total due of ৳${remainingTotalDue.toFixed(2)}.`);
       return;
     }
     try {
@@ -220,7 +282,7 @@ export default function SuperAdminIncomePage() {
       setPayModal(null);
       fetchIncome();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to record payment');
+      notifyError(err.response?.data?.message || 'Failed to record payment');
     } finally {
       setPaying(false);
     }
@@ -228,12 +290,183 @@ export default function SuperAdminIncomePage() {
 
   const handleDeletePayment = async (row: IncomeRow) => {
     if (!row.paymentId) return;
-    if (!confirm(`Delete payment for ${months.find((m) => m.value === month)?.label} ${year} - Bed ${row.bedNumber}?`)) return;
+    const confirmed = await confirmAction({
+      title: 'Delete this payment?',
+      message: `Delete payment for ${months.find((m) => m.value === month)?.label} ${year} - Bed ${row.bedNumber}?`,
+      confirmLabel: 'Delete payment',
+      danger: true,
+    });
+    if (!confirmed) return;
     try {
       await api.delete(`/income-payments/${row.paymentId}`);
       fetchIncome();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to delete payment');
+      notifyError(err.response?.data?.message || 'Failed to delete payment');
+    }
+  };
+
+  const resetEditForm = () => {
+    setEditRow(null);
+    setEditHostelId('');
+    setEditUnitId('');
+    setEditRoomId('');
+    setEditBedId('');
+    setEditClientName('');
+    setEditMobile('');
+    setEditAmount('');
+    setEditStatus('unpaid');
+    setEditUnits([]);
+    setEditRooms([]);
+    setEditBeds([]);
+    setEditSaving(false);
+    setEditOptionsLoading(false);
+  };
+
+  const openEditRow = (row: IncomeRow) => {
+    setEditRow(row);
+    setEditHostelId(row.hostelId || '');
+    setEditUnitId(row.unitId || '');
+    setEditRoomId(row.roomId || '');
+    setEditBedId(row.bedId || '');
+    setEditClientName(row.assigneeName || '');
+    setEditMobile(row.mobileNumber || '');
+    setEditAmount(String(row.basePrice ?? ''));
+    setEditStatus(row.status === 'paid' ? 'paid' : 'unpaid');
+  };
+
+  useEffect(() => {
+    if (!editRow) return;
+    if (!editHostelId) {
+      setEditUnits([]);
+      setEditUnitId('');
+      setEditRooms([]);
+      setEditRoomId('');
+      setEditBeds([]);
+      setEditBedId('');
+      return;
+    }
+    let cancelled = false;
+    setEditOptionsLoading(true);
+    api
+      .get(`/units?hostelId=${editHostelId}`)
+      .then((res) => {
+        if (cancelled) return;
+        const nextUnits = (res.data.units || []) as UnitOption[];
+        setEditUnits(nextUnits);
+        if (editUnitId && !nextUnits.some((unit) => unit.id === editUnitId)) {
+          setEditUnitId('');
+          setEditRoomId('');
+          setEditBedId('');
+          setEditRooms([]);
+          setEditBeds([]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setEditUnits([]);
+      })
+      .finally(() => {
+        if (!cancelled) setEditOptionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editRow, editHostelId]);
+
+  useEffect(() => {
+    if (!editRow || !editHostelId || !editUnitId) {
+      if (editRow && (!editHostelId || !editUnitId)) {
+        setEditRooms([]);
+        setEditBeds([]);
+      }
+      return;
+    }
+    let cancelled = false;
+    api
+      .get(`/rooms?hostelId=${editHostelId}&unitId=${editUnitId}`)
+      .then((res) => {
+        if (cancelled) return;
+        const nextRooms = mergeRooms((res.data.rooms || []) as RoomOption[], {
+          id: editRow.unitId === editUnitId ? editRow.roomId || '' : '',
+          roomNumber: editRow.roomNumber || '',
+        });
+        setEditRooms(nextRooms);
+        if (editRoomId && !nextRooms.some((room) => room.id === editRoomId)) {
+          setEditRoomId('');
+          setEditBedId('');
+          setEditBeds([]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setEditRooms([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editRow, editHostelId, editUnitId]);
+
+  useEffect(() => {
+    if (!editRow || !editRoomId) {
+      if (editRow && !editRoomId) setEditBeds([]);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get(`/rooms/${editRoomId}/beds`)
+      .then((res) => {
+        if (cancelled) return;
+        const nextBeds = mergeBeds((res.data.beds || []) as BedOption[], {
+          id: editRow.roomId === editRoomId ? editRow.bedId || '' : '',
+          bedNumber: editRow.bedNumber || '',
+          basePrice: editRow.basePrice,
+        });
+        setEditBeds(nextBeds);
+        if (editBedId && !nextBeds.some((bed) => bed.id === editBedId)) {
+          setEditBedId('');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setEditBeds([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editRow, editRoomId]);
+
+  const handleEditRow = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editRow) return;
+    if (!editClientName.trim()) {
+      notifyError('Client name is required.');
+      return;
+    }
+    if (!editHostelId || !editUnitId || !editRoomId || !editBedId) {
+      notifyError('Please select building, unit, room and bed.');
+      return;
+    }
+    const amount = Number(editAmount);
+    if (!Number.isFinite(amount) || amount < 0) {
+      notifyError('Please enter a valid amount.');
+      return;
+    }
+    try {
+      setEditSaving(true);
+      await api.patch(`/income/${editRow.bedId}`, {
+        nextBedId: editBedId,
+        assigneeName: editClientName.trim(),
+        mobileNumber: editMobile.trim(),
+        basePrice: amount,
+        status: editStatus,
+        originalStatus: editRow.status,
+        month,
+        year,
+      });
+      resetEditForm();
+      fetchIncome();
+      notifySuccess('Income row updated successfully.');
+    } catch (err: unknown) {
+      notifyError(getErrorMessage(err, 'Failed to update income row'));
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -421,6 +654,9 @@ export default function SuperAdminIncomePage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex items-center gap-3">
+                          <button type="button" onClick={() => openEditRow(row)} className={editBtnClass}>
+                            Edit
+                          </button>
                           <button
                             type="button"
                             onClick={() => openPayModal(row)}
@@ -555,6 +791,193 @@ export default function SuperAdminIncomePage() {
                     className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90 disabled:opacity-50"
                   >
                     {paying ? 'Saving...' : isAllDueCleared ? 'All paid' : 'Pay'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {editRow && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+              <h4 className="mb-4 text-lg font-semibold text-gray-900">Edit income row</h4>
+              <form onSubmit={handleEditRow} className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-900">Building</label>
+                    <select
+                      value={editHostelId}
+                      onChange={(e) => {
+                        setEditHostelId(e.target.value);
+                        setEditUnitId('');
+                        setEditRoomId('');
+                        setEditBedId('');
+                        setEditRooms([]);
+                        setEditBeds([]);
+                      }}
+                      className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                      required
+                    >
+                      <option value="">Select building</option>
+                      {hostels.map((h: any) => (
+                        <option key={h.id || h._id} value={h.id || h._id}>
+                          {h.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-900">Unit</label>
+                    <select
+                      value={editUnitId}
+                      onChange={(e) => {
+                        setEditUnitId(e.target.value);
+                        setEditRoomId('');
+                        setEditBedId('');
+                        setEditBeds([]);
+                      }}
+                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 disabled:bg-gray-100"
+                      disabled={!editHostelId}
+                      required
+                    >
+                      <option value="">
+                        {editHostelId && editUnits.length === 0 ? 'No units found' : 'Select unit'}
+                      </option>
+                      {editUnits.map((unit) => (
+                        <option key={unit.id} value={unit.id}>
+                          {unit.unitNumber}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-900">Room</label>
+                    <select
+                      value={editRoomId}
+                      onChange={(e) => {
+                        setEditRoomId(e.target.value);
+                        setEditBedId('');
+                      }}
+                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 disabled:bg-gray-100"
+                      disabled={!editUnitId}
+                      required
+                    >
+                      <option value="">
+                        {editUnitId && editRooms.length === 0 ? 'No rooms found' : 'Select room'}
+                      </option>
+                      {editRooms.map((room) => (
+                        <option key={room.id} value={room.id}>
+                          {room.roomNumber}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-900">Bed</label>
+                    <select
+                      value={editBedId}
+                      onChange={(e) => {
+                        const nextBedId = e.target.value;
+                        setEditBedId(nextBedId);
+                        const selected = editBeds.find((bed) => bed.id === nextBedId);
+                        if (selected && nextBedId !== editRow.bedId && selected.basePrice != null) {
+                          setEditAmount(String(selected.basePrice));
+                        }
+                      }}
+                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 disabled:bg-gray-100"
+                      disabled={!editRoomId}
+                      required
+                    >
+                      <option value="">
+                        {editRoomId && editBeds.length === 0 ? 'No beds found' : 'Select bed'}
+                      </option>
+                      {editBeds.map((bed) => {
+                        const occupied = Boolean(bed.isOccupied || bed.registeredUserId || bed.assigneeName);
+                        const isCurrent = bed.id === editRow.bedId;
+                        return (
+                          <option key={bed.id} value={bed.id} disabled={occupied && !isCurrent}>
+                            {bed.bedNumber}
+                            {occupied && !isCurrent ? ' (occupied)' : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-900">Client</label>
+                    <input
+                      type="text"
+                      value={editClientName}
+                      onChange={(e) => setEditClientName(e.target.value)}
+                      className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-900">Mobile</label>
+                    <input
+                      type="text"
+                      value={editMobile}
+                      onChange={(e) => setEditMobile(e.target.value)}
+                      className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                      placeholder="e.g. 01XXXXXXXXX"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-900">Amount</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={editAmount}
+                      onChange={(e) => setEditAmount(e.target.value)}
+                      className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-900">Due</label>
+                    <input
+                      type="text"
+                      value={`৳${Number(editRow.totalDue || 0).toFixed(2)}`}
+                      className="mt-1 block w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-gray-900"
+                      readOnly
+                      disabled
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Due is recalculated from amount and payments after save.</p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-gray-900">
+                      Status ({months.find((m) => m.value === month)?.label} {year})
+                    </label>
+                    <select
+                      value={editStatus}
+                      onChange={(e) => setEditStatus(e.target.value as 'paid' | 'unpaid')}
+                      className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
+                      required
+                    >
+                      <option value="unpaid">Unpaid</option>
+                      <option value="paid">Paid</option>
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Paid records a full month payment for the selected month. Unpaid removes that month’s payment.
+                    </p>
+                  </div>
+                </div>
+                {editOptionsLoading ? (
+                  <p className="text-sm text-gray-500">Loading assignment options…</p>
+                ) : null}
+                <div className="flex justify-end gap-2 pt-2">
+                  <button type="button" onClick={resetEditForm} className="px-4 py-2 text-gray-600">
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={editSaving || editOptionsLoading}
+                    className="rounded-lg bg-secondary px-4 py-2 text-secondary-foreground hover:bg-secondary/90 disabled:opacity-50"
+                  >
+                    {editSaving ? 'Saving...' : 'Save'}
                   </button>
                 </div>
               </form>

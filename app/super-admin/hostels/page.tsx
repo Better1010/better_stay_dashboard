@@ -4,6 +4,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
+import { notifyError } from '@/lib/notify';
 
 function getErrorMessage(err: unknown, fallback: string): string {
   if (err && typeof err === 'object' && 'response' in err) {
@@ -56,7 +57,7 @@ export default function SuperAdminHostelsPage() {
       setEmail('');
       fetchHostels();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to add building');
+      notifyError(err.response?.data?.message || 'Failed to add building');
     }
   };
 

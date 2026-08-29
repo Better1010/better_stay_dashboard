@@ -4,6 +4,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { useEffect, useMemo, useState } from 'react';
 import api from '@/lib/api';
 import { formatDateDDMMYYYY, isoToDDMMYYYY, parseDDMMYYYYToISO } from '@/lib/utils';
+import { notifyError } from '@/lib/notify';
 
 const editActionButtonClass =
   'border-0 bg-transparent p-0 text-sm font-medium text-secondary shadow-none hover:text-secondary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary/35 focus-visible:ring-offset-0';
@@ -113,7 +114,7 @@ export default function SuperAdminExpensesPage() {
     if (!editExpense) return;
     const parsedDate = parseDDMMYYYYToISO(editExpenseDate);
     if (!parsedDate) {
-      alert('Please enter a valid date in DD/MM/YYYY format');
+      notifyError('Please enter a valid date in DD/MM/YYYY format');
       return;
     }
     try {
@@ -128,7 +129,7 @@ export default function SuperAdminExpensesPage() {
       showToast('Expense updated successfully');
       loadData();
     } catch (err: unknown) {
-      alert(getErrorMessage(err, 'Failed to update expense'));
+      notifyError(getErrorMessage(err, 'Failed to update expense'));
     }
   };
 
@@ -231,7 +232,7 @@ export default function SuperAdminExpensesPage() {
       loadData();
       showToast('Category added successfully');
     } catch (err: unknown) {
-      alert(getErrorMessage(err, 'Failed to add category'));
+      notifyError(getErrorMessage(err, 'Failed to add category'));
     }
   };
 
@@ -240,9 +241,9 @@ export default function SuperAdminExpensesPage() {
     const parsedDate = parseDDMMYYYYToISO(expenseDate);
     if (!addBuildingId || !unitId || !categoryId || !amount || !parsedDate) {
       if (!parsedDate && addBuildingId && unitId && categoryId && amount) {
-        alert('Please enter a valid date in DD/MM/YYYY format');
+        notifyError('Please enter a valid date in DD/MM/YYYY format');
       } else {
-        alert('Please select Building, Unit, Category, Amount and Date');
+        notifyError('Please select Building, Unit, Category, Amount and Date');
       }
       return;
     }
@@ -259,7 +260,7 @@ export default function SuperAdminExpensesPage() {
       setExpenseDate(formatDateDDMMYYYY(new Date()));
       loadData();
     } catch (err: unknown) {
-      alert(getErrorMessage(err, 'Failed to add expense'));
+      notifyError(getErrorMessage(err, 'Failed to add expense'));
     }
   };
 

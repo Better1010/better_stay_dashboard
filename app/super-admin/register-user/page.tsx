@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import api from '@/lib/api';
+import { confirmAction, notifyError, notifySuccess, notifyWarning } from '@/lib/notify';
 import { uploadNidPicture } from '@/lib/supabase';
 
 const editBtnClass =
@@ -76,6 +77,27 @@ function formatWhen(iso: string | undefined) {
   }
 }
 
+function roomNumberValue(roomNumber: string | undefined) {
+  if (!roomNumber) return null;
+  const match = roomNumber.match(/\d+/);
+  if (!match) return null;
+  return Number(match[0]);
+}
+
+function compareUsersByRoom(a: RegisteredUserRow, b: RegisteredUserRow, direction: 'asc' | 'desc') {
+  const aNum = roomNumberValue(a.roomNumber);
+  const bNum = roomNumberValue(b.roomNumber);
+  if (aNum === null && bNum === null) {
+    return (a.roomNumber || '').localeCompare(b.roomNumber || '', undefined, { numeric: true, sensitivity: 'base' });
+  }
+  if (aNum === null) return 1;
+  if (bNum === null) return -1;
+  if (aNum !== bNum) return direction === 'asc' ? aNum - bNum : bNum - aNum;
+  const label = (a.roomNumber || '').localeCompare(b.roomNumber || '', undefined, { numeric: true, sensitivity: 'base' });
+  if (label !== 0) return direction === 'asc' ? label : -label;
+  return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+}
+
 function mergeHostels(items: HostelOption[], current?: { id: string; name: string } | null) {
   if (!current?.id) return items;
   if (items.some((item) => (item.id || item._id) === current.id)) return items;
@@ -106,10 +128,11 @@ export default function RegisterUserPage() {
   const [nidFrontFile, setNidFrontFile] = useState<File | null>(null);
   const [nidBackFile, setNidBackFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [users, setUsers] = useState<RegisteredUserRow[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
   const [userSearch, setUserSearch] = useState('');
+  const [roomSort, setRoomSort] = useState<'asc' | 'desc' | ''>('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [hostels, setHostels] = useState<HostelOption[]>([]);
   const [units, setUnits] = useState<UnitOption[]>([]);
   const [rooms, setRooms] = useState<RoomOption[]>([]);
@@ -221,9 +244,10 @@ export default function RegisterUserPage() {
     }
   }, [status]);
 
-  const showToast = (type: 'success' | 'error', message: string) => {
-    setToast({ type, message });
-    window.setTimeout(() => setToast(null), 3000);
+  const showToast = (type: 'success' | 'error' | 'warning', message: string) => {
+    if (type === 'success') notifySuccess(message);
+    else if (type === 'warning') notifyWarning(message);
+    else notifyError(message);
   };
 
   const availableBeds = beds;
@@ -487,9 +511,9 @@ export default function RegisterUserPage() {
 
       setEditUser(null);
       showToast(
-        'success',
+        editStatus === 'inactive' ? 'warning' : 'success',
         editStatus === 'inactive'
-          ? 'User updated and removed from bed.'
+          ? 'User updated. Status is inactive and room and bed are empty.'
           : editBedId !== editOriginalBedId
             ? 'User and bed assignment updated successfully.'
             : 'User updated successfully.',
@@ -542,22 +566,42 @@ export default function RegisterUserPage() {
 
   const filteredUsers = useMemo(() => {
     const query = userSearch.trim().toLowerCase();
-    if (!query) return users;
-    return users.filter((u) => u.name.toLowerCase().includes(query));
-  }, [users, userSearch]);
+    const next = users.filter((u) => {
+      const matchesSearch = !query || u.name.toLowerCase().includes(query);
+      const userStatus = u.status === 'inactive' ? 'inactive' : 'active';
+      const matchesStatus = statusFilter === 'all' || userStatus === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+    if (!roomSort) return next;
+    return [...next].sort((a, b) => compareUsersByRoom(a, b, roomSort));
+  }, [users, userSearch, roomSort, statusFilter]);
 
   const toggleUserStatus = async (user: RegisteredUserRow) => {
     const nextStatus = user.status === 'inactive' ? 'active' : 'inactive';
+    const goingInactive = nextStatus === 'inactive';
+    const assignmentLabel = [user.roomNumber, user.bedNumber].filter(Boolean).join(' · ');
+    const confirmed = await confirmAction({
+      title: goingInactive ? 'Mark this user inactive?' : 'Mark this user active?',
+      message: goingInactive
+        ? assignmentLabel
+          ? `${user.name} will be unassigned from ${assignmentLabel}. Room and bed will become empty.`
+          : `${user.name} will be marked inactive. Room and bed will stay empty.`
+        : `Mark ${user.name} as active? Assign a room and bed from Edit after this.`,
+      confirmLabel: goingInactive ? 'Mark inactive' : 'Mark active',
+      danger: goingInactive,
+    });
+    if (!confirmed) return;
+
     try {
       setStatusUpdatingUserId(user.id);
       await api.patch(`/registered-users/${user.id}`, { status: nextStatus });
       await fetchUsers();
       await refreshAssignmentDropdowns();
       showToast(
-        'success',
-        nextStatus === 'inactive'
-          ? 'User marked inactive and removed from bed.'
-          : 'User marked active.',
+        goingInactive ? 'warning' : 'success',
+        goingInactive
+          ? 'User is now inactive. Room and bed are empty.'
+          : 'User is now active. Assign a room and bed from Edit if needed.',
       );
     } catch (err: unknown) {
       showToast('error', getErrorMessage(err, 'Failed to update status'));
@@ -569,19 +613,6 @@ export default function RegisterUserPage() {
   return (
     <DashboardLayout requiredRole={['super_admin']}>
       <div className="space-y-10">
-        {toast ? (
-          <div className="fixed top-4 right-4 z-9999">
-            <div
-              className={`rounded-xl border px-4 py-3 shadow-lg ${
-                toast.type === 'success'
-                  ? 'bg-green-50 border-green-200 text-green-800'
-                  : 'bg-red-50 border-red-200 text-red-800'
-              }`}
-            >
-              <p className="text-sm font-medium">{toast.message}</p>
-            </div>
-          </div>
-        ) : null}
         <div>
           <div className="mb-6 max-w-3xl">
             <h2 className="text-2xl font-bold text-gray-900">Register & Assign User</h2>
@@ -808,13 +839,37 @@ export default function RegisterUserPage() {
                       Unit
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Room
+                      <div className="flex flex-col gap-1.5">
+                        <span>Room</span>
+                        <select
+                          value={roomSort}
+                          onChange={(e) => setRoomSort(e.target.value as 'asc' | 'desc' | '')}
+                          className="w-full min-w-[8.5rem] rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium normal-case tracking-normal text-gray-700"
+                          aria-label="Sort rooms numerically"
+                        >
+                          <option value="">Default</option>
+                          <option value="asc">Ascending</option>
+                          <option value="desc">Descending</option>
+                        </select>
+                      </div>
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                       Bed
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Status
+                      <div className="flex flex-col gap-1.5">
+                        <span>Status</span>
+                        <select
+                          value={statusFilter}
+                          onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
+                          className="w-full min-w-[7.5rem] rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium normal-case tracking-normal text-gray-700"
+                          aria-label="Filter by status"
+                        >
+                          <option value="all">All</option>
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                        </select>
+                      </div>
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                       Registered
@@ -836,7 +891,7 @@ export default function RegisterUserPage() {
                       <td colSpan={11} className="px-4 py-10 text-center text-sm text-gray-500">
                         {users.length === 0
                           ? 'No registered users yet. Add someone using the form above.'
-                          : 'No users match your search.'}
+                          : 'No users match your search or filters.'}
                       </td>
                     </tr>
                   ) : (
@@ -945,7 +1000,22 @@ export default function RegisterUserPage() {
                       <label className="block text-sm font-medium text-gray-900">Status</label>
                       <select
                         value={editStatus}
-                        onChange={(e) => setEditStatus(e.target.value as 'active' | 'inactive')}
+                        onChange={async (e) => {
+                          const nextStatus = e.target.value as 'active' | 'inactive';
+                          if (nextStatus === 'inactive' && editStatus === 'active') {
+                            const assignmentLabel = [editUser?.roomNumber, editUser?.bedNumber].filter(Boolean).join(' · ');
+                            const confirmed = await confirmAction({
+                              title: 'Mark this user inactive?',
+                              message: assignmentLabel
+                                ? `${editUser?.name || 'This user'} will be unassigned from ${assignmentLabel}. Room and bed will become empty.`
+                                : 'Setting inactive will clear this user’s room and bed.',
+                              confirmLabel: 'Mark inactive',
+                              danger: true,
+                            });
+                            if (!confirmed) return;
+                          }
+                          setEditStatus(nextStatus);
+                        }}
                         className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900"
                         required
                       >

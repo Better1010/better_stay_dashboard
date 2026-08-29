@@ -3,6 +3,7 @@
 import DashboardLayout from '@/components/DashboardLayout';
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
+import { notifyError } from '@/lib/notify';
 
 export default function ResidentComplaintsPage() {
   const [complaints, setComplaints] = useState<any[]>([]);
@@ -38,7 +39,7 @@ export default function ResidentComplaintsPage() {
       fetchComplaints();
     } catch (error) {
       console.error('Error submitting complaint:', error);
-      alert('Failed to submit complaint');
+      notifyError('Failed to submit complaint');
     }
   };
 

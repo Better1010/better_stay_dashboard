@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
+import AppToaster from "@/components/AppToaster";
 
 /** Loaded via Next.js — referenced in globals.css @theme as --font-sans / --font-mono */
 const inter = Inter({
@@ -28,7 +29,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${geistMono.variable}`}>
       <body className="min-h-screen antialiased font-sans">
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <AppToaster />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

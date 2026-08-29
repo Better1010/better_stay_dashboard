@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import api from '@/lib/api';
+import { notifyError } from '@/lib/notify';
 
 const editActionButtonClass =
   'border-0 bg-transparent p-0 text-sm font-medium text-secondary shadow-none hover:text-secondary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary/35 focus-visible:ring-offset-0';
@@ -107,7 +108,7 @@ export default function InvestmentPage() {
       setAmount('');
       fetchInvestments();
     } catch (err: unknown) {
-      alert(getErrorMessage(err, 'Failed to add investment'));
+      notifyError(getErrorMessage(err, 'Failed to add investment'));
     } finally {
       setSaving(false);
     }
@@ -135,7 +136,7 @@ export default function InvestmentPage() {
       setEditRow(null);
       fetchInvestments();
     } catch (err: unknown) {
-      alert(getErrorMessage(err, 'Failed to update investment'));
+      notifyError(getErrorMessage(err, 'Failed to update investment'));
     } finally {
       setEditSaving(false);
     }
