@@ -1344,9 +1344,10 @@ const getClientHistory = async (): Promise<ApiResponse> => {
 const monthYearKey = (year: number, month: number) => year * 12 + month;
 
 const getBillingStartFromDates = (registrationDate: string | null | undefined, assignmentDate: string | null | undefined) => {
-  const reg = registrationDate ? new Date(registrationDate) : null;
   const assign = assignmentDate ? new Date(assignmentDate) : null;
-  const date = reg || assign || new Date();
+  const reg = registrationDate ? new Date(registrationDate) : null;
+  const valid = (date: Date | null) => (date && !Number.isNaN(date.getTime()) ? date : null);
+  const date = valid(assign) || valid(reg) || new Date();
   return { year: date.getFullYear(), month: date.getMonth() + 1 };
 };
 
@@ -1396,7 +1397,7 @@ const computeCumulativeDue = (
 const getBillingStartForBed = async (bedId: string) => {
   const assignRes = await supabase
     .from('bed_assignments')
-    .select('registered_user_id, assigned_at')
+    .select('id, assigned_at')
     .eq('bed_id', bedId)
     .is('ended_at', null)
     .maybeSingle();
@@ -1404,17 +1405,10 @@ const getBillingStartForBed = async (bedId: string) => {
   if (!assignRes.data) {
     throw new ApiRequestError(400, 'This bed is not currently assigned');
   }
-  let registrationDate: string | null = null;
-  if (assignRes.data.registered_user_id) {
-    const userRes = await supabase
-      .from('registered_users')
-      .select('created_at')
-      .eq('id', assignRes.data.registered_user_id)
-      .maybeSingle();
-    throwIfError(userRes.error, 'Failed to load registered user');
-    registrationDate = userRes.data?.created_at ?? null;
-  }
-  return getBillingStartFromDates(registrationDate, assignRes.data.assigned_at);
+  return {
+    ...getBillingStartFromDates(null, assignRes.data.assigned_at),
+    assignmentId: assignRes.data.id as string,
+  };
 };
 
 const getIncome = async (queryParams?: {
@@ -1495,19 +1489,24 @@ const getIncome = async (queryParams?: {
 
   const unitIds = rooms.map((r: any) => r.unit_id).filter((id: any): id is string => Boolean(id));
   const hostelIds = rooms.map((r: any) => r.hostel_id).filter((id: any): id is string => Boolean(id));
+  const assignmentIds = assignments.map((a: any) => a.id).filter(Boolean);
   const [unitsRes, hostelsRes, paidRes, allPaymentsRes] = await Promise.all([
     unitIds.length > 0 ? supabase.from('units').select('id, unit_number').in('id', unitIds) : Promise.resolve({ data: [], error: null } as any),
     hostelIds.length > 0 ? supabase.from('hostels').select('id, name').in('id', hostelIds) : Promise.resolve({ data: [], error: null } as any),
-    supabase
-      .from('income_payments')
-      .select('id, bed_id, amount')
-      .eq('month', month)
-      .eq('year', year)
-      .in('bed_id', filteredBedIds),
-    supabase
-      .from('income_payments')
-      .select('bed_id, month, year, amount')
-      .in('bed_id', filteredBedIds),
+    assignmentIds.length > 0
+      ? supabase
+          .from('income_payments')
+          .select('id, bed_id, amount, assignment_id')
+          .eq('month', month)
+          .eq('year', year)
+          .in('assignment_id', assignmentIds)
+      : Promise.resolve({ data: [], error: null } as any),
+    assignmentIds.length > 0
+      ? supabase
+          .from('income_payments')
+          .select('bed_id, assignment_id, month, year, amount')
+          .in('assignment_id', assignmentIds)
+      : Promise.resolve({ data: [], error: null } as any),
   ]);
   throwIfError(unitsRes.error, 'Failed to load units');
   throwIfError(hostelsRes.error, 'Failed to load hostels');
@@ -1539,10 +1538,7 @@ const getIncome = async (queryParams?: {
       const paid = paidByBedId.get(bed.id);
       const basePrice = Number(bed.base_price ?? 0);
       const paidAmount = paid ? Number(paid.amount) : 0;
-      const billingStart = getBillingStartFromDates(
-        registered?.created_at ?? null,
-        assignment.assigned_at ?? null
-      );
+      const billingStart = getBillingStartFromDates(null, assignment.assigned_at ?? null);
       const billableMonths = listBillableMonths(
         billingStart.year,
         billingStart.month,
@@ -1553,6 +1549,11 @@ const getIncome = async (queryParams?: {
       const totalDue = computeCumulativeDue(basePrice, billableMonths, paymentsByKey);
       return {
         bedId: bed.id,
+        assignmentId: assignment.id,
+        registeredUserId: assignment.registered_user_id || '',
+        hostelId: room.hostel_id || '',
+        unitId: room.unit_id || '',
+        roomId: room.id,
         bedNumber: bed.bed_number,
         basePrice,
         roomNumber: room.room_number,
@@ -1590,16 +1591,17 @@ const getPaidMonths = async (bedId: string, year: number): Promise<ApiResponse> 
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
-  const [bedRes, res, billingStart] = await Promise.all([
+  const [bedRes, billingStart] = await Promise.all([
     supabase.from('beds').select('base_price').eq('id', bedId).single(),
-    supabase
-      .from('income_payments')
-      .select('month, amount')
-      .eq('bed_id', bedId)
-      .eq('year', year),
     getBillingStartForBed(bedId),
   ]);
   throwIfError(bedRes.error, 'Failed to load bed price');
+  const res = await supabase
+    .from('income_payments')
+    .select('month, amount')
+    .eq('bed_id', bedId)
+    .eq('year', year)
+    .eq('assignment_id', billingStart.assignmentId);
   throwIfError(res.error, 'Failed to load paid months');
   const basePrice = Number(bedRes.data?.base_price ?? 0);
   const payments = (res.data || [])
@@ -1659,7 +1661,7 @@ const payIncome = async (payload: any): Promise<ApiResponse> => {
   const allPaymentsRes = await supabase
     .from('income_payments')
     .select('id, month, year, amount')
-    .eq('bed_id', bedId);
+    .eq('assignment_id', activeAssignRes.data.id);
   throwIfError(allPaymentsRes.error, 'Failed to load payment history');
 
   const paymentsByKey = new Map<string, { id?: string; amount: number }>();
@@ -1747,6 +1749,157 @@ const deleteIncomePayment = async (paymentId: string): Promise<ApiResponse> => {
   const res = await supabase.from('income_payments').delete().eq('id', paymentId);
   throwIfError(res.error, 'Failed to delete payment');
   return { data: { success: true } };
+};
+
+const updateIncomeRow = async (bedId: string, payload: any): Promise<ApiResponse> => {
+  const current = requireAuthUser();
+  const sourceBedId = String(bedId || '');
+  const assigneeName = payload?.assigneeName != null ? String(payload.assigneeName).trim() : '';
+  const mobileNumber = payload?.mobileNumber != null ? String(payload.mobileNumber).trim() : '';
+  const nextBedId = payload?.nextBedId ? String(payload.nextBedId) : sourceBedId;
+  const basePrice = Number(payload?.basePrice);
+  const nextStatus = payload?.status === 'paid' || payload?.status === 'unpaid' ? payload.status : null;
+  const originalStatus = payload?.originalStatus === 'paid' || payload?.originalStatus === 'unpaid' ? payload.originalStatus : null;
+  const month = Number(payload?.month);
+  const year = Number(payload?.year);
+
+  if (!sourceBedId) throw new ApiRequestError(400, 'bedId is required');
+  if (!assigneeName) throw new ApiRequestError(400, 'Client name is required');
+  if (!Number.isFinite(basePrice) || basePrice < 0) throw new ApiRequestError(400, 'Valid amount is required');
+  if (!nextBedId) throw new ApiRequestError(400, 'Bed is required');
+
+  const assignmentRes = await supabase
+    .from('bed_assignments')
+    .select('id, bed_id, registered_user_id, nid_picture_front_url, nid_picture_back_url')
+    .eq('bed_id', sourceBedId)
+    .is('ended_at', null)
+    .maybeSingle();
+  throwIfError(assignmentRes.error, 'Failed to load assignment');
+  if (!assignmentRes.data) throw new ApiRequestError(404, 'No active assignment found for this bed');
+  const assignment = assignmentRes.data;
+  let activeAssignmentId = assignment.id;
+
+  if (nextBedId !== sourceBedId) {
+    const [targetAssignRes, targetBedRes] = await Promise.all([
+      supabase.from('bed_assignments').select('id').eq('bed_id', nextBedId).is('ended_at', null).maybeSingle(),
+      supabase.from('beds').select('id').eq('id', nextBedId).maybeSingle(),
+    ]);
+    throwIfError(targetAssignRes.error, 'Failed to verify target bed');
+    throwIfError(targetBedRes.error, 'Failed to load selected bed');
+    if (!targetBedRes.data) throw new ApiRequestError(404, 'Selected bed not found');
+    if (targetAssignRes.data) {
+      throw new ApiRequestError(409, 'The selected bed is already assigned to another client.');
+    }
+
+    const ended = await supabase
+      .from('bed_assignments')
+      .update({
+        ended_at: nowIso(),
+        assignee_name: assigneeName,
+        mobile_number: mobileNumber || null,
+        updated_at: nowIso(),
+      })
+      .eq('id', assignment.id);
+    throwIfError(ended.error, 'Failed to close the previous assignment');
+
+    const created = await supabase
+      .from('bed_assignments')
+      .insert({
+        bed_id: nextBedId,
+        resident_id: null,
+        registered_user_id: assignment.registered_user_id ?? null,
+        assignee_name: assigneeName,
+        mobile_number: mobileNumber || null,
+        nid_picture_front_url: assignment.nid_picture_front_url || null,
+        nid_picture_back_url: assignment.nid_picture_back_url || null,
+        price: basePrice,
+        assigned_by: current.id,
+        assigned_at: nowIso(),
+        created_at: nowIso(),
+        updated_at: nowIso(),
+      })
+      .select('id')
+      .single();
+    throwIfError(created.error, 'Failed to assign the new bed');
+    if (!created.data?.id) throw new ApiRequestError(400, 'Failed to assign the new bed');
+    activeAssignmentId = created.data.id;
+
+    const [freeOld, occupyNew] = await Promise.all([
+      supabase.from('beds').update({ is_occupied: false, resident_id: null, updated_at: nowIso() }).eq('id', sourceBedId),
+      supabase.from('beds').update({ is_occupied: true, resident_id: null, updated_at: nowIso() }).eq('id', nextBedId),
+    ]);
+    throwIfError(freeOld.error, 'Failed to free the previous bed');
+    throwIfError(occupyNew.error, 'Failed to occupy the selected bed');
+  } else {
+    const assignUpdate = await supabase
+      .from('bed_assignments')
+      .update({
+        assignee_name: assigneeName,
+        mobile_number: mobileNumber || null,
+        price: basePrice,
+        updated_at: nowIso(),
+      })
+      .eq('id', assignment.id);
+    throwIfError(assignUpdate.error, 'Failed to update assignment');
+  }
+
+  if (assignment.registered_user_id) {
+    const userUpdate = await supabase
+      .from('registered_users')
+      .update({
+        name: assigneeName,
+        mobile_number: mobileNumber || null,
+        updated_at: nowIso(),
+      })
+      .eq('id', assignment.registered_user_id);
+    throwIfError(userUpdate.error, 'Failed to update client details');
+  }
+
+  const bedUpdate = await supabase
+    .from('beds')
+    .update({ base_price: basePrice, updated_at: nowIso() })
+    .eq('id', nextBedId);
+  throwIfError(bedUpdate.error, 'Failed to update amount');
+
+  if (nextStatus && month >= 1 && month <= 12 && year >= 2000) {
+    const existingPay = await supabase
+      .from('income_payments')
+      .select('id, amount')
+      .eq('assignment_id', activeAssignmentId)
+      .eq('month', month)
+      .eq('year', year)
+      .maybeSingle();
+    throwIfError(existingPay.error, 'Failed to load month payment');
+
+    if (nextStatus === 'paid') {
+      const amount = Math.max(basePrice, Number(existingPay.data?.amount || 0));
+      if (amount <= 0) throw new ApiRequestError(400, 'Amount must be greater than 0 to mark as paid');
+      const paymentPayload = {
+        bed_id: nextBedId,
+        assignment_id: activeAssignmentId,
+        month,
+        year,
+        amount,
+        paid_at: nowIso(),
+        paid_by: current.id,
+        updated_at: nowIso(),
+      };
+      if (existingPay.data?.id) {
+        if (Number(existingPay.data.amount || 0) < amount) {
+          const upd = await supabase.from('income_payments').update(paymentPayload).eq('id', existingPay.data.id);
+          throwIfError(upd.error, 'Failed to update payment status');
+        }
+      } else {
+        const ins = await supabase.from('income_payments').insert({ ...paymentPayload, created_at: nowIso() });
+        throwIfError(ins.error, 'Failed to mark as paid');
+      }
+    } else if (originalStatus === 'paid' && existingPay.data?.id) {
+      const del = await supabase.from('income_payments').delete().eq('id', existingPay.data.id);
+      throwIfError(del.error, 'Failed to mark as unpaid');
+    }
+  }
+
+  return { data: { success: true, bedId: nextBedId } };
 };
 
 const getAnalytics = async (queryParams?: {
@@ -1907,7 +2060,7 @@ const getDeposits = async (queryParams?: { search?: string }): Promise<ApiRespon
 
   const depRes = await supabase
     .from('deposits')
-    .select('id, registered_user_id, amount, cleared, created_at')
+    .select('id, registered_user_id, amount, cleared, created_at, room_id, bed_id')
     .order('created_at', { ascending: false });
   throwIfError(depRes.error, 'Failed to load deposits');
 
@@ -1990,10 +2143,27 @@ const getDeposits = async (queryParams?: { search?: string }): Promise<ApiRespon
     }
   }
 
+  const depositRoomIds = Array.from(new Set(deposits.map((d: any) => d.room_id).filter(Boolean)));
+  const depositBedIds = Array.from(new Set(deposits.map((d: any) => d.bed_id).filter(Boolean)));
+  const depositRoomsRes =
+    depositRoomIds.length > 0
+      ? await supabase.from('rooms').select('id, room_number').in('id', depositRoomIds)
+      : ({ data: [], error: null } as any);
+  throwIfError(depositRoomsRes.error, 'Failed to load deposit rooms');
+  const depositBedsRes =
+    depositBedIds.length > 0
+      ? await supabase.from('beds').select('id, bed_number').in('id', depositBedIds)
+      : ({ data: [], error: null } as any);
+  throwIfError(depositBedsRes.error, 'Failed to load deposit beds');
+  const depositRoomById = new Map<string, any>((depositRoomsRes.data || []).map((r: any) => [r.id, r]));
+  const depositBedById = new Map<string, any>((depositBedsRes.data || []).map((b: any) => [b.id, b]));
+
   const mapDepositRow = (d: any) => {
     const user = usersById.get(d.registered_user_id);
     const assignmentLocations = locationsByUserId.get(d.registered_user_id) || [];
     const bedAssignmentStatus = assignmentLocations.length > 0 ? 'assigned' : 'unassigned';
+    const depositRoom = d.room_id ? depositRoomById.get(d.room_id) : null;
+    const depositBed = d.bed_id ? depositBedById.get(d.bed_id) : null;
 
     return {
       id: d.id,
@@ -2003,6 +2173,10 @@ const getDeposits = async (queryParams?: { search?: string }): Promise<ApiRespon
       amount: Number(d.amount || 0),
       cleared: Boolean(d.cleared),
       createdAt: d.created_at,
+      roomId: d.room_id || '',
+      bedId: d.bed_id || '',
+      roomNumber: depositRoom?.room_number || '',
+      bedNumber: depositBed?.bed_number || '',
       bedAssignmentStatus,
       assignmentLocations,
       userDetail: user
@@ -2027,6 +2201,31 @@ const getDeposits = async (queryParams?: { search?: string }): Promise<ApiRespon
   return { data: { deposits: rows, totalDeposit } };
 };
 
+const resolveDepositLocation = async (roomIdRaw: unknown, bedIdRaw: unknown) => {
+  const roomId = roomIdRaw ? String(roomIdRaw).trim() : '';
+  const bedId = bedIdRaw ? String(bedIdRaw).trim() : '';
+  if (!roomId) throw new ApiRequestError(400, 'Room is required');
+  if (!bedId) throw new ApiRequestError(400, 'Bed is required');
+
+  const bedRes = await supabase.from('beds').select('id, room_id').eq('id', bedId).single();
+  throwIfError(bedRes.error, 'Bed not found');
+  if (!bedRes.data) throw new ApiRequestError(404, 'Bed not found');
+  if (String(bedRes.data.room_id) !== roomId) {
+    throw new ApiRequestError(400, 'Bed does not belong to the selected room');
+  }
+
+  const roomRes = await supabase.from('rooms').select('id, hostel_id, unit_id').eq('id', roomId).single();
+  throwIfError(roomRes.error, 'Room not found');
+  if (!roomRes.data) throw new ApiRequestError(404, 'Room not found');
+
+  return {
+    hostel_id: roomRes.data.hostel_id || null,
+    unit_id: roomRes.data.unit_id || null,
+    room_id: roomId,
+    bed_id: bedId,
+  };
+};
+
 const createDeposit = async (payload: any): Promise<ApiResponse> => {
   const current = requireAuthUser();
   const registeredUserId = payload?.registeredUserId ? String(payload.registeredUserId) : '';
@@ -2039,11 +2238,14 @@ const createDeposit = async (payload: any): Promise<ApiResponse> => {
   throwIfError(userRes.error, 'Registered user not found');
   if (!userRes.data) throw new ApiRequestError(404, 'Registered user not found');
 
+  const location = await resolveDepositLocation(payload?.roomId, payload?.bedId);
+
   const res = await supabase
     .from('deposits')
     .insert({
       registered_user_id: registeredUserId,
       amount,
+      ...location,
       created_by: current.id,
       created_at: nowIso(),
       updated_at: nowIso(),
@@ -2075,6 +2277,10 @@ const updateDeposit = async (id: string, payload: any): Promise<ApiResponse> => 
 
   if (payload?.cleared !== undefined) {
     updatePayload.cleared = Boolean(payload.cleared);
+  }
+
+  if (payload?.roomId !== undefined || payload?.bedId !== undefined) {
+    Object.assign(updatePayload, await resolveDepositLocation(payload?.roomId, payload?.bedId));
   }
 
   if (Object.keys(updatePayload).length === 1) {
@@ -2352,6 +2558,11 @@ const dispatch = async (method: Method, path: string, payload?: any): Promise<Ap
     });
   }
   if (method === 'POST' && path === '/income/pay') return payIncome(payload);
+  if (method === 'PATCH' && path.match(/^\/income\/[^/]+$/)) {
+    const id = getPathParam(path, /^\/income\/([^/]+)$/);
+    if (!id) throw new ApiRequestError(404, 'Not found');
+    return updateIncomeRow(id, payload);
+  }
   if (method === 'DELETE' && path.match(/^\/income-payments\/[^/]+$/)) {
     const id = getPathParam(path, /^\/income-payments\/([^/]+)$/);
     if (!id) throw new ApiRequestError(404, 'Not found');

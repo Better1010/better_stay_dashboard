@@ -3,6 +3,7 @@
 import DashboardLayout from '@/components/DashboardLayout';
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
+import { confirmAction, notifyError } from '@/lib/notify';
 
 export default function AdminRoomsPage() {
   const [building, setBuilding] = useState<any>(null);
@@ -85,7 +86,7 @@ export default function AdminRoomsPage() {
       setUnitFloor(1);
       refreshUnits();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to add unit');
+      notifyError(err.response?.data?.message || 'Failed to add unit');
     }
   };
 
@@ -106,7 +107,7 @@ export default function AdminRoomsPage() {
       setRoomTotalBeds(1);
       refreshRooms();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to add room');
+      notifyError(err.response?.data?.message || 'Failed to add room');
     }
   };
 
@@ -115,7 +116,7 @@ export default function AdminRoomsPage() {
     if (!selectedRoomId) return;
     const num = bedNumber.trim();
     if (!num) {
-      alert('Please enter a bed number (e.g. B1, B2).');
+      notifyError('Please enter a bed number (e.g. B1, B2).');
       return;
     }
     try {
@@ -141,7 +142,7 @@ export default function AdminRoomsPage() {
       }
       // Do not call refreshBeds() here: if GET fails it overwrites state with [] and the new bed disappears
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to add bed');
+      notifyError(err.response?.data?.message || 'Failed to add bed');
     }
   };
 
@@ -154,17 +155,23 @@ export default function AdminRoomsPage() {
       setAssigneeName('');
       refreshBeds();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to assign bed');
+      notifyError(err.response?.data?.message || 'Failed to assign bed');
     }
   };
 
   const handleUnassign = async (bedId: string) => {
-    if (!confirm('Unassign this bed from the resident?')) return;
+    const confirmed = await confirmAction({
+      title: 'Unassign this bed?',
+      message: 'This bed will be unassigned from the resident.',
+      confirmLabel: 'Unassign',
+      danger: true,
+    });
+    if (!confirmed) return;
     try {
       await api.patch(`/beds/${bedId}/unassign`);
       refreshBeds();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to unassign');
+      notifyError(err.response?.data?.message || 'Failed to unassign');
     }
   };
 

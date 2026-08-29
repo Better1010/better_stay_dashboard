@@ -3,6 +3,7 @@
 import DashboardLayout from '@/components/DashboardLayout';
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
+import { notifyError } from '@/lib/notify';
 
 export default function ResidentsPage() {
   const [residents, setResidents] = useState<any[]>([]);
@@ -37,7 +38,7 @@ export default function ResidentsPage() {
       fetchResidents();
     } catch (error) {
       console.error('Error updating status:', error);
-      alert('Failed to update status');
+      notifyError('Failed to update status');
     }
   };
 

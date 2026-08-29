@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import api from '@/lib/api';
 import { ChevronDown, Download, FileSpreadsheet, FileText } from 'lucide-react';
 import { Document, Image, Page, StyleSheet, Text, View, pdf } from '@react-pdf/renderer';
+import { notifyError } from '@/lib/notify';
 
 const pdfStyles = StyleSheet.create({
   page: {
@@ -483,7 +484,7 @@ export default function SuperAdminAnalyticsPage() {
       downloadBlob(blob, `${exportFileName()}.pdf`);
     } catch (error) {
       console.error('Error generating analytics PDF:', error);
-      window.alert('Could not generate the PDF. Please try again.');
+      notifyError('Could not generate the PDF. Please try again.');
     } finally {
       setGeneratingPdf(false);
     }

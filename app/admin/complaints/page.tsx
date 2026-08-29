@@ -3,6 +3,7 @@
 import DashboardLayout from '@/components/DashboardLayout';
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
+import { notifyError } from '@/lib/notify';
 
 export default function ComplaintsPage() {
   const [complaints, setComplaints] = useState<any[]>([]);
@@ -29,7 +30,7 @@ export default function ComplaintsPage() {
       fetchComplaints();
     } catch (error) {
       console.error('Error updating status:', error);
-      alert('Failed to update status');
+      notifyError('Failed to update status');
     }
   };
 
