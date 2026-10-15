@@ -3,10 +3,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import api from '@/lib/api';
-import { notifyError } from '@/lib/notify';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
 const editActionButtonClass =
-  'border-0 bg-transparent p-0 text-sm font-medium text-secondary shadow-none hover:text-secondary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary/35 focus-visible:ring-offset-0';
+  'border-0 bg-transparent p-0 text-sm font-medium text-secondary shadow-none hover:text-secondary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary/35 focus-visible:ring-offset-0 cursor-pointer';
+
+const deleteActionButtonClass =
+  'border-0 bg-transparent p-0 text-sm font-medium text-red-600 shadow-none hover:text-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/35 focus-visible:ring-offset-0 cursor-pointer';
 
 type InvestmentRow = {
   id: string;
@@ -57,6 +60,8 @@ export default function InvestmentPage() {
   const [editDate, setEditDate] = useState('');
   const [editAmount, setEditAmount] = useState('');
   const [editSaving, setEditSaving] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<InvestmentRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const years = useMemo(() => {
     const start = now.getFullYear() - 3;
@@ -139,6 +144,21 @@ export default function InvestmentPage() {
       notifyError(getErrorMessage(err, 'Failed to update investment'));
     } finally {
       setEditSaving(false);
+    }
+  };
+
+  const handleDeleteInvestment = async () => {
+    if (!deleteConfirm) return;
+    try {
+      setDeleting(true);
+      await api.delete(`/investments/${deleteConfirm.id}`);
+      notifySuccess('Investment deleted successfully');
+      setDeleteConfirm(null);
+      fetchInvestments();
+    } catch (err: unknown) {
+      notifyError(getErrorMessage(err, 'Failed to delete investment'));
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -272,9 +292,14 @@ export default function InvestmentPage() {
                       <td className="px-4 py-3 text-sm text-gray-700">{row.date ? new Date(row.date).toLocaleDateString() : '—'}</td>
                       <td className="px-4 py-3 text-sm text-right text-gray-700 font-medium">৳{Number(row.amount).toFixed(2)}</td>
                       <td className="px-4 py-3 text-sm text-right">
-                        <button type="button" onClick={() => openEdit(row)} className={editActionButtonClass}>
-                          Edit
-                        </button>
+                        <div className="flex items-center justify-end gap-3">
+                          <button type="button" onClick={() => openEdit(row)} className={editActionButtonClass}>
+                            Edit
+                          </button>
+                          <button type="button" onClick={() => setDeleteConfirm(row)} className={deleteActionButtonClass}>
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -348,6 +373,35 @@ export default function InvestmentPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {deleteConfirm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-xl">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete investment</h3>
+              <p className="text-sm text-gray-600 mb-6">
+                Are you sure you want to delete investment <strong>&quot;{deleteConfirm.name}&quot;</strong>? This action cannot be undone.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirm(null)}
+                  disabled={deleting}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800 text-sm font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteInvestment}
+                  disabled={deleting}
+                  className="rounded-lg bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/90 disabled:opacity-50"
+                >
+                  {deleting ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
             </div>
           </div>
         )}

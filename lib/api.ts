@@ -2377,6 +2377,13 @@ const updateInvestment = async (id: string, payload: any): Promise<ApiResponse> 
   };
 };
 
+const deleteInvestment = async (id: string): Promise<ApiResponse> => {
+  requireAuthUser();
+  const res = await supabase.from('investments').delete().eq('id', id);
+  throwIfError(res.error, res.error?.message || 'Failed to delete investment');
+  return { data: { success: true } };
+};
+
 const dispatch = async (method: Method, path: string, payload?: any): Promise<ApiResponse> => {
   if (method === 'POST' && path === '/auth/login') return authLogin(payload);
   if (method === 'POST' && path === '/auth/signup') return authSignup(payload);
@@ -2523,6 +2530,11 @@ const dispatch = async (method: Method, path: string, payload?: any): Promise<Ap
     const id = getPathParam(path, /^\/investments\/([^/]+)$/);
     if (!id) throw new ApiRequestError(404, 'Not found');
     return updateInvestment(id, payload);
+  }
+  if (method === 'DELETE' && path.match(/^\/investments\/[^/]+$/)) {
+    const id = getPathParam(path, /^\/investments\/([^/]+)$/);
+    if (!id) throw new ApiRequestError(404, 'Not found');
+    return deleteInvestment(id);
   }
   if (method === 'GET' && path.startsWith('/analytics')) {
     const hostelId = getQueryParam(path, 'hostelId') || undefined;
