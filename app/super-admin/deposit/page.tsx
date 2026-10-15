@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import api from '@/lib/api';
 import { confirmAction, notifyError, notifySuccess } from '@/lib/notify';
 import { cn } from '@/lib/utils';
+import { Check, ChevronDown, Search, X } from 'lucide-react';
 
 type UserDetail = {
   id: string;
@@ -43,8 +44,12 @@ type RegisteredUser = {
   id: string;
   name: string;
   mobileNumber?: string;
+  status: 'active' | 'inactive';
   roomId?: string;
+  roomNumber?: string;
   activeBedId?: string | null;
+  bedNumber?: string;
+  buildingName?: string;
 };
 
 type RoomOption = {
@@ -74,9 +79,17 @@ function normalizeRegisteredUsersList(raw: unknown): RegisteredUser[] {
       const mobileRaw = u.mobileNumber ?? u.mobile_number ?? u.phone;
       const mobileNumber = typeof mobileRaw === 'string' ? mobileRaw.trim() : '';
       const roomId = asOptionalId(u.roomId ?? u.room_id);
+      const roomNumberRaw = u.roomNumber ?? u.room_number;
+      const roomNumber = typeof roomNumberRaw === 'string' ? roomNumberRaw.trim() : '';
       const bedRaw = u.activeBedId ?? u.active_bed_id;
       const activeBedId = typeof bedRaw === 'string' && bedRaw.trim() ? bedRaw.trim() : null;
-      return { id, name, mobileNumber, roomId, activeBedId };
+      const bedNumberRaw = u.bedNumber ?? u.bed_number;
+      const bedNumber = typeof bedNumberRaw === 'string' ? bedNumberRaw.trim() : '';
+      const buildingRaw = u.buildingName ?? u.building_name;
+      const buildingName = typeof buildingRaw === 'string' ? buildingRaw.trim() : '';
+      const statusRaw = typeof u.status === 'string' ? u.status.trim().toLowerCase() : '';
+      const status: 'active' | 'inactive' = statusRaw === 'inactive' ? 'inactive' : 'active';
+      return { id, name, mobileNumber, status, roomId, roomNumber, activeBedId, bedNumber, buildingName };
     })
     .filter((u) => u.id.length > 0);
 }
@@ -154,6 +167,276 @@ function PaginationBar({
           Next
         </button>
       </div>
+    </div>
+  );
+}
+
+function ClientSearchableSelect({
+  clients,
+  selectedClientId,
+  onSelectClient,
+  rooms,
+  disabled = false,
+  loading = false,
+  placeholder = 'Select client',
+  emptyMessage = 'No active clients available in this room',
+}: {
+  clients: RegisteredUser[];
+  selectedClientId: string;
+  onSelectClient: (clientId: string) => void;
+  rooms: RoomOption[];
+  disabled?: boolean;
+  loading?: boolean;
+  placeholder?: string;
+  emptyMessage?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selectedUser = useMemo(
+    () => clients.find((c) => c.id === selectedClientId),
+    [clients, selectedClientId],
+  );
+
+  const selectedRoomNumber = useMemo(() => {
+    if (!selectedUser) return '';
+    if (selectedUser.roomNumber) return selectedUser.roomNumber;
+    if (selectedUser.roomId) {
+      const r = rooms.find((room) => room.id === selectedUser.roomId);
+      if (r) return r.roomNumber;
+    }
+    return '';
+  }, [selectedUser, rooms]);
+
+  useEffect(() => {
+    if (isOpen) {
+      inputRef.current?.focus();
+    } else {
+      setSearchQuery('');
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
+
+  const filteredClients = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return clients;
+
+    const queryDigits = query.replace(/\D/g, '');
+
+    return clients.filter((user) => {
+      // 1. Name match
+      if (user.name.toLowerCase().includes(query)) return true;
+
+      // 2. Mobile match
+      if ((user.mobileNumber || '').toLowerCase().includes(query)) return true;
+
+      // 3. Room number match
+      const rawRoom = (user.roomNumber || '').trim();
+      const fallbackRoom = user.roomId
+        ? (rooms.find((r) => r.id === user.roomId)?.roomNumber || '').trim()
+        : '';
+      const room = (rawRoom || fallbackRoom).toLowerCase();
+
+      if (room) {
+        if (room.includes(query)) return true;
+        if (`room ${room}`.includes(query)) return true;
+        if (`room-${room}`.includes(query)) return true;
+        const roomDigits = room.replace(/\D/g, '');
+        if (queryDigits && roomDigits && roomDigits.includes(queryDigits)) return true;
+      }
+
+      // 4. Building name match
+      if ((user.buildingName || '').toLowerCase().includes(query)) return true;
+
+      return false;
+    });
+  }, [clients, rooms, searchQuery]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className="block text-sm font-medium text-gray-900">Registered client</label>
+      <div
+        role="button"
+        tabIndex={disabled || loading ? -1 : 0}
+        onClick={() => {
+          if (!disabled && !loading) {
+            setIsOpen((prev) => !prev);
+          }
+        }}
+        onKeyDown={(e) => {
+          if ((e.key === 'Enter' || e.key === ' ') && !disabled && !loading) {
+            e.preventDefault();
+            setIsOpen((prev) => !prev);
+          }
+        }}
+        className={cn(
+          'mt-1 flex w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-900 transition-colors focus:border-secondary focus:outline-hidden focus:ring-1 focus:ring-secondary',
+          !disabled && !loading ? 'cursor-pointer' : 'cursor-not-allowed bg-gray-100 text-gray-400',
+        )}
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-2 truncate">
+          {selectedUser ? (
+            <>
+              <span className="font-medium text-gray-900 truncate">{selectedUser.name}</span>
+              {selectedRoomNumber && (
+                <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-semibold text-gray-700">
+                  Room {selectedRoomNumber}
+                </span>
+              )}
+              {selectedUser.mobileNumber && (
+                <span className="truncate text-xs text-gray-500">· {selectedUser.mobileNumber}</span>
+              )}
+            </>
+          ) : (
+            <span className="text-gray-500">
+              {loading ? 'Loading clients…' : placeholder}
+            </span>
+          )}
+        </div>
+        <div className="ml-2 flex shrink-0 items-center gap-1">
+          {selectedUser && !disabled && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectClient('');
+              }}
+              className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              title="Clear client selection"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+          <ChevronDown
+            className={cn(
+              'h-4 w-4 text-gray-500 transition-transform duration-200',
+              isOpen && 'rotate-180',
+            )}
+          />
+        </div>
+      </div>
+
+      {isOpen && (
+        <div className="absolute left-0 right-0 top-full z-40 mt-1 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl animate-in fade-in-0 zoom-in-95">
+          {/* Search bar inside dropdown */}
+          <div className="border-b border-gray-100 bg-gray-50/80 p-2.5">
+            <div className="relative flex items-center">
+              <Search className="absolute left-2.5 h-4 w-4 text-gray-400" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (filteredClients.length > 0) {
+                      onSelectClient(filteredClients[0].id);
+                      setIsOpen(false);
+                      setSearchQuery('');
+                    }
+                  }
+                }}
+                placeholder="Search client by name or bed..."
+                className="w-full rounded-md border border-gray-300 bg-white py-1.5 pl-8.5 pr-8 text-xs text-gray-900 placeholder:text-gray-400 focus:border-secondary focus:outline-hidden focus:ring-1 focus:ring-secondary"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 text-gray-400 hover:text-gray-600"
+                  title="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Client List */}
+          <div className="max-h-52 overflow-y-auto p-1.5 divide-y divide-gray-50">
+            {filteredClients.length === 0 ? (
+              <div className="px-3 py-6 text-center text-xs text-gray-500">
+                {searchQuery.trim()
+                  ? `No clients matching "${searchQuery}"`
+                  : emptyMessage}
+              </div>
+            ) : (
+              filteredClients.map((u) => {
+                const isSelected = u.id === selectedClientId;
+                const roomNum =
+                  u.roomNumber ||
+                  (u.roomId ? rooms.find((r) => r.id === u.roomId)?.roomNumber : '');
+                return (
+                  <button
+                    key={u.id}
+                    type="button"
+                    onClick={() => {
+                      onSelectClient(u.id);
+                      setIsOpen(false);
+                      setSearchQuery('');
+                    }}
+                    className={cn(
+                      'flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-gray-100',
+                      isSelected && 'bg-secondary/10 text-secondary font-medium hover:bg-secondary/15',
+                    )}
+                  >
+                    <div className="min-w-0 flex-1 pr-2">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={cn(
+                            'font-medium text-gray-900 truncate',
+                            isSelected && 'text-secondary font-semibold',
+                          )}
+                        >
+                          {u.name}
+                        </span>
+                        {roomNum ? (
+                          <span className="inline-flex shrink-0 items-center rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] font-semibold text-gray-700">
+                            Room {roomNum}
+                          </span>
+                        ) : (
+                          <span className="inline-flex shrink-0 items-center text-[11px] text-gray-400 italic">
+                            No room
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-2 text-xs text-gray-500 truncate">
+                        {u.mobileNumber && <span>{u.mobileNumber}</span>}
+                        {u.bedNumber && <span>· Bed {u.bedNumber}</span>}
+                        {u.buildingName && <span>· {u.buildingName}</span>}
+                      </div>
+                    </div>
+                    {isSelected && <Check className="h-4 w-4 shrink-0 text-secondary" />}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -262,12 +545,26 @@ export default function DepositPage() {
     setBedId(user?.activeBedId || '');
   };
 
+  const activeRegisteredUsers = useMemo(() => {
+    return registeredUsers.filter((u) => u.status !== 'inactive');
+  }, [registeredUsers]);
+
+  const addModalRoomClients = useMemo(() => {
+    if (!selectedRoomId) return [];
+    return activeRegisteredUsers.filter((u) => u.roomId === selectedRoomId);
+  }, [activeRegisteredUsers, selectedRoomId]);
+
+  const editModalRoomClients = useMemo(() => {
+    if (!editRoomId) return [];
+    return registeredUsers.filter((u) => u.roomId === editRoomId || u.id === editRegisteredUserId);
+  }, [registeredUsers, editRoomId, editRegisteredUserId]);
+
   useEffect(() => {
     if (!addModal) return;
     setClientsLoading(true);
     fetchRegisteredUsers()
       .then((list) => {
-        setSelectedRegisteredUserId((prev) => (prev && list.some((u) => u.id === prev) ? prev : ''));
+        setSelectedRegisteredUserId((prev) => (prev && list.some((u) => u.id === prev && u.status !== 'inactive') ? prev : ''));
       })
       .finally(() => setClientsLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -398,7 +695,22 @@ export default function DepositPage() {
 
   const handleAddDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedRegisteredUserId || !selectedRoomId || !selectedBedId || !amount) return;
+    if (!selectedRoomId) {
+      notifyError('Please select a room first.');
+      return;
+    }
+    if (!selectedRegisteredUserId) {
+      notifyError('Please select a registered client.');
+      return;
+    }
+    if (!selectedBedId) {
+      notifyError('Please select a bed.');
+      return;
+    }
+    if (!amount) {
+      notifyError('Please enter the deposit amount.');
+      return;
+    }
     try {
       setSaving(true);
       await api.post('/deposits', {
@@ -428,7 +740,15 @@ export default function DepositPage() {
 
   const handleEditDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editDeposit || !editRegisteredUserId || !editRoomId || !editBedId || !editAmount) return;
+    if (!editDeposit) return;
+    if (!editRoomId) {
+      notifyError('Please select a room first.');
+      return;
+    }
+    if (!editRegisteredUserId) {
+      notifyError('Please select a registered client.');
+      return;
+    }
     try {
       setEditSaving(true);
       await api.patch(`/deposits/${editDeposit.id}`, {
@@ -707,55 +1027,25 @@ export default function DepositPage() {
               <h4 className="mb-4 text-lg font-semibold text-gray-900">Add Deposit</h4>
               <form onSubmit={handleAddDeposit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-900">Registered client</label>
-                  <select
-                    value={selectedRegisteredUserId}
-                    onChange={(e) => {
-                      const userId = e.target.value;
-                      setSelectedRegisteredUserId(userId);
-                      applyClientLocation(userId, registeredUsers, setSelectedRoomId, setSelectedBedId);
-                    }}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
-                    required
-                    disabled={clientsLoading}
-                  >
-                    <option value="">
-                      {clientsLoading
-                        ? 'Loading clients…'
-                        : registeredUsers.length === 0
-                          ? 'No registered clients — add one on Register User'
-                          : 'Select client'}
-                    </option>
-                    {registeredUsers.map((u) => {
-                      const label = [u.name, u.mobileNumber].filter(Boolean).join(' · ');
-                      return (
-                        <option key={u.id} value={u.id}>
-                          {label || u.id}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-                <div>
                   <label className="block text-sm font-medium text-gray-900">Room</label>
                   <select
                     value={selectedRoomId}
                     onChange={(e) => {
-                      setSelectedRoomId(e.target.value);
+                      const newRoomId = e.target.value;
+                      setSelectedRoomId(newRoomId);
+                      setSelectedRegisteredUserId('');
                       setSelectedBedId('');
                     }}
                     className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 disabled:bg-gray-100"
                     required
-                    disabled={!selectedRegisteredUserId || roomsLoading}
+                    disabled={roomsLoading}
                   >
                     <option value="">
-                      {!selectedRegisteredUserId
-                        ? 'Select client first'
-                        : roomsLoading
-                          ? 'Loading rooms…'
-                          : rooms.length === 0
-                            ? 'No rooms found'
-                            : 'Select room'}
+                      {roomsLoading
+                        ? 'Loading rooms…'
+                        : rooms.length === 0
+                          ? 'No rooms found'
+                          : 'Select room'}
                     </option>
                     {rooms.map((room) => (
                       <option key={room.id} value={room.id}>
@@ -764,6 +1054,26 @@ export default function DepositPage() {
                     ))}
                   </select>
                 </div>
+                <ClientSearchableSelect
+                  clients={addModalRoomClients}
+                  selectedClientId={selectedRegisteredUserId}
+                  onSelectClient={(userId) => {
+                    setSelectedRegisteredUserId(userId);
+                    if (!userId) {
+                      setSelectedBedId('');
+                    } else {
+                      const user = registeredUsers.find((u) => u.id === userId);
+                      if (user?.activeBedId) {
+                        setSelectedBedId(user.activeBedId);
+                      }
+                    }
+                  }}
+                  rooms={rooms}
+                  disabled={!selectedRoomId || clientsLoading}
+                  loading={clientsLoading}
+                  placeholder={!selectedRoomId ? 'Select room first' : 'Select client'}
+                  emptyMessage="No active registered clients in this room"
+                />
                 <div>
                   <label className="block text-sm font-medium text-gray-900">Bed</label>
                   <select
@@ -831,55 +1141,25 @@ export default function DepositPage() {
               <h4 className="mb-4 text-lg font-semibold text-gray-900">Edit Deposit</h4>
               <form onSubmit={handleEditDeposit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-900">Registered client</label>
-                  <select
-                    value={editRegisteredUserId}
-                    onChange={(e) => {
-                      const userId = e.target.value;
-                      setEditRegisteredUserId(userId);
-                      applyClientLocation(userId, registeredUsers, setEditRoomId, setEditBedId);
-                    }}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
-                    required
-                    disabled={clientsLoading}
-                  >
-                    <option value="">
-                      {clientsLoading
-                        ? 'Loading clients…'
-                        : registeredUsers.length === 0
-                          ? 'No registered clients — add one on Register User'
-                          : 'Select client'}
-                    </option>
-                    {registeredUsers.map((u) => {
-                      const label = [u.name, u.mobileNumber].filter(Boolean).join(' · ');
-                      return (
-                        <option key={u.id} value={u.id}>
-                          {label || u.id}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-                <div>
                   <label className="block text-sm font-medium text-gray-900">Room</label>
                   <select
                     value={editRoomId}
                     onChange={(e) => {
-                      setEditRoomId(e.target.value);
+                      const newRoomId = e.target.value;
+                      setEditRoomId(newRoomId);
+                      setEditRegisteredUserId('');
                       setEditBedId('');
                     }}
                     className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 disabled:bg-gray-100"
                     required
-                    disabled={!editRegisteredUserId || roomsLoading}
+                    disabled={roomsLoading}
                   >
                     <option value="">
-                      {!editRegisteredUserId
-                        ? 'Select client first'
-                        : roomsLoading
-                          ? 'Loading rooms…'
-                          : rooms.length === 0
-                            ? 'No rooms found'
-                            : 'Select room'}
+                      {roomsLoading
+                        ? 'Loading rooms…'
+                        : rooms.length === 0
+                          ? 'No rooms found'
+                          : 'Select room'}
                     </option>
                     {rooms.map((room) => (
                       <option key={room.id} value={room.id}>
@@ -888,6 +1168,26 @@ export default function DepositPage() {
                     ))}
                   </select>
                 </div>
+                <ClientSearchableSelect
+                  clients={editModalRoomClients}
+                  selectedClientId={editRegisteredUserId}
+                  onSelectClient={(userId) => {
+                    setEditRegisteredUserId(userId);
+                    if (!userId) {
+                      setEditBedId('');
+                    } else {
+                      const user = registeredUsers.find((u) => u.id === userId);
+                      if (user?.activeBedId) {
+                        setEditBedId(user.activeBedId);
+                      }
+                    }
+                  }}
+                  rooms={rooms}
+                  disabled={!editRoomId || clientsLoading}
+                  loading={clientsLoading}
+                  placeholder={!editRoomId ? 'Select room first' : 'Select client'}
+                  emptyMessage="No clients in this room"
+                />
                 <div>
                   <label className="block text-sm font-medium text-gray-900">Bed</label>
                   <select
